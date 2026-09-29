@@ -1,0 +1,181 @@
+# =============================================================================
+#  Azahar para Redmi 9A — APK armeabi-v7a compilado en GitHub Actions
+#  Basado en el CI oficial del proyecto (.github/workflows/build.yml + .ci/android.sh)
+#
+#  IMPORTANTE: el Redmi 9A corre una MIUI de 32 bits (aunque el Helio G25 sea
+#  capaz de 64 bits, la ROM solo ejecuta APKs armv7) => ABI objetivo:
+#  armeabi-v7a.
+#
+#  OPTIMIZACIONES INCLUIDAS (para el Helio G25 = 8x Cortex-A53)
+#   - -mcpu=cortex-a53 en TODO el código nativo C/C++: división entera por
+#     hardware (idiv), NEON con FMA y scheduling exacto del A53.
+#     Nota: el APK queda específico para Cortex-A53; no lo instales en ARMv7
+#     sin idiv.
+#   - -O3 -DNDEBUG -funroll-loops en las configs de release.
+#   - NEON ya viene forzado por el proyecto (cryptopp lo requiere).
+#   - Se elimina el flag de páginas de 16KB (solo aplica a arm64/Android 15+).
+#
+#  RENDIMIENTO EN 32 BITS
+#   En ARM32 no hay JIT de dynarmic: la CPU se emula con el intérprete rápido
+#   FastInterp (use_cpu_jit=0 / use_fastinterp=1). La GPU (PowerVR GE8320)
+#   tampoco expone Vulkan en MIUI -> renderizador con OpenGL ES.
+# =============================================================================
+name: Azahar Redmi 9A (32 bits)
+
+on:
+  workflow_dispatch:
+    inputs:
+      solo_arm32:
+        description: 'Compilar solo armeabi-v7a (MIUI 32 bits)'
+        type: boolean
+        default: true
+  push:
+    branches: [ master ]
+    tags: [ 'v*' ]
+
+concurrency:
+  group: azahar-redmi9a-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: APK vanilla release (armeabi-v7a)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_COMPILERCHECK: content
+      CCACHE_SLOPPINESS: time_macros
+
+    steps:
+      # ------------------------------------------------------------------ #
+      # Preparación                                                        #
+      # ------------------------------------------------------------------ #
+      - name: Checkout (con submódulos)
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Instalar JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Instalar herramientas (ccache, apksigner)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ccache apksigner
+
+      - name: Instalar NDK 27.3 y CMake 3.30.3 del SDK
+        run: |
+          echo "y" | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager "ndk;27.3.13750724" > /dev/null
+          echo "y" | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager "cmake;3.30.3" > /dev/null
+
+      # ------------------------------------------------------------------ #
+      # Retarget a 32 bits (la ROM del Redmi 9A solo ejecuta APKs armv7)  #
+      # ------------------------------------------------------------------ #
+      - name: Retarget ABI a armeabi-v7a
+        if: ${{ github.event.inputs.solo_arm32 != 'false' }}
+        run: |
+          sed -i 's|val abiFilter = listOf("arm64-v8a", "x86_64")|val abiFilter = listOf("armeabi-v7a")|' \
+            src/android/app/build.gradle.kts
+          grep -q 'armeabi-v7a' src/android/app/build.gradle.kts \
+            || echo "::warning::No se pudo retocar el abiFilter (cambió build.gradle.kts upstream)"
+          grep -n 'val abiFilter' src/android/app/build.gradle.kts || true
+          echo "ABI_SUFFIX=armeabi-v7a" >> "$GITHUB_ENV"
+
+      - name: Retarget ABI a armeabi-v7a + arm64-v8a
+        if: ${{ github.event.inputs.solo_arm32 == 'false' }}
+        run: |
+          sed -i 's|val abiFilter = listOf("arm64-v8a", "x86_64")|val abiFilter = listOf("armeabi-v7a", "arm64-v8a")|' \
+            src/android/app/build.gradle.kts
+          grep -q 'armeabi-v7a' src/android/app/build.gradle.kts \
+            || echo "::warning::No se pudo retocar el abiFilter (cambió build.gradle.kts upstream)"
+          grep -n 'val abiFilter' src/android/app/build.gradle.kts || true
+          echo "ABI_SUFFIX=universal" >> "$GITHUB_ENV"
+
+      - name: Quitar flag de páginas de 16KB (innecesario en 32 bits)
+        run: |
+          sed -i -e '/ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES/d' -e '/^ *\/\/ sizes$/d' \
+            src/android/app/build.gradle.kts
+
+      # ------------------------------------------------------------------ #
+      # Optimizaciones para el Helio G25 (Cortex-A53)                      #
+      # ------------------------------------------------------------------ #
+      - name: Inyectar optimizaciones Cortex-A53
+        run: |
+          sed -i 's|"-DENABLE_GDBSTUB=OFF" // Disable GDB stub|"-DENABLE_GDBSTUB=OFF", // Disable GDB stub\n                    "-DCMAKE_C_FLAGS=-mcpu=cortex-a53",\n                    "-DCMAKE_CXX_FLAGS=-mcpu=cortex-a53",\n                    "-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG -funroll-loops",\n                    "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -funroll-loops",\n                    "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O3 -DNDEBUG -funroll-loops",\n                    "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O3 -DNDEBUG -funroll-loops"|' \
+            src/android/app/build.gradle.kts
+          grep -q 'mcpu=cortex-a53' src/android/app/build.gradle.kts \
+            || echo "::warning::No se pudieron inyectar las optimizaciones (cambió build.gradle.kts upstream)"
+          sed -n '/arguments(/,/^                )/p' src/android/app/build.gradle.kts
+
+      # ------------------------------------------------------------------ #
+      # Caché (Gradle + ccache)                                            #
+      # ------------------------------------------------------------------ #
+      - name: Restaurar cachés de compilación
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ${{ github.workspace }}/.ccache
+          key: android-armv7-cortex-a53-ndk27.3-${{ github.sha }}
+          restore-keys: |
+            android-armv7-cortex-a53-ndk27.3-
+
+      # ------------------------------------------------------------------ #
+      # Compilación                                                        #
+      # ------------------------------------------------------------------ #
+      - name: Compilar APK (vanilla release)
+        working-directory: src/android
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          chmod +x ./gradlew
+          export NDK_CCACHE="$(which ccache)"
+          if [ -n "$ANDROID_KEYSTORE_B64" ]; then
+            echo "::group::Firma con keystore de los secrets"
+            echo "$ANDROID_KEYSTORE_B64" | base64 -d > "$GITHUB_WORKSPACE/ks.jks"
+            export ANDROID_KEYSTORE_FILE="$GITHUB_WORKSPACE/ks.jks"
+            echo "::endgroup::"
+          else
+            echo "Sin secrets de firma: el APK se firmará con la clave debug del runner (firma no estable)."
+          fi
+          ./gradlew assembleVanillaRelease --stacktrace
+          echo "::group::Estadísticas de ccache"
+          ccache -s || true
+          echo "::endgroup::"
+          rm -f "$GITHUB_WORKSPACE/ks.jks"
+
+      # ------------------------------------------------------------------ #
+      # Resultados                                                         #
+      # ------------------------------------------------------------------ #
+      - name: Renombrar y recopilar APK
+        run: |
+          DATE="$(git show -s --date=format:%Y%m%d --format=%cd)"
+          REV="$(git rev-parse --short HEAD)"
+          mkdir -p artifacts
+          cp src/android/app/build/outputs/apk/vanilla/release/*.apk \
+             "artifacts/azahar-android-${DATE}-${REV}-${ABI_SUFFIX}.apk"
+          ls -lh artifacts/
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v7
+        with:
+          name: azahar-redmi9a-armv7
+          path: artifacts/*.apk
+          if-no-files-found: error
+
+      - name: Publicar en Releases (solo tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.apk
+          generate_release_notes: true

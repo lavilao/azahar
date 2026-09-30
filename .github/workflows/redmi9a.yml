@@ -1,10 +1,18 @@
 # =============================================================================
-#  Azahar para Redmi 9A — APK armeabi-v7a compilado en GitHub Actions
+#  Azahar para Redmi 9A — APK armeabi-v7a (32 bits) compilado en GitHub Actions
 #  Basado en el CI oficial del proyecto (.github/workflows/build.yml + .ci/android.sh)
 #
 #  IMPORTANTE: el Redmi 9A corre una MIUI de 32 bits (aunque el Helio G25 sea
 #  capaz de 64 bits, la ROM solo ejecuta APKs armv7) => ABI objetivo:
-#  armeabi-v7a.
+#  armeabi-v7a, NUNCA arm64-v8a.
+#
+#  VULKAN: tu Redmi 9A SÍ tiene Vulkan (el PowerVR GE8320 del Helio G25 lo
+#  expone en MIUI). Este workflow lo compila SIEMPRE: el backend Vulkan del
+#  emulador va incluido en el APK (se fuerza explícitamente con
+#  -DENABLE_VULKAN=ON, que de todos modos ya es el valor por defecto del
+#  proyecto en Android) junto al de OpenGL ES. Tras instalar, actívalo en:
+#  Ajustes -> Video -> Renderizador -> Vulkan (y si algún juego pinta raro
+#  con el driver PowerVR, desde ese mismo menú vuelves a OpenGL ES).
 #
 #  OPTIMIZACIONES INCLUIDAS (para el Helio G25 = 8x Cortex-A53)
 #   - -mcpu=cortex-a53 en TODO el código nativo C/C++: división entera por
@@ -17,8 +25,11 @@
 #
 #  RENDIMIENTO EN 32 BITS
 #   En ARM32 no hay JIT de dynarmic: la CPU se emula con el intérprete rápido
-#   FastInterp (use_cpu_jit=0 / use_fastinterp=1). La GPU (PowerVR GE8320)
-#   tampoco expone Vulkan en MIUI -> renderizador con OpenGL ES.
+#   FastInterp (use_cpu_jit=0 / use_fastinterp=1). Tener Vulkan en la GPU
+#   descarga buena parte del trabajo gráfico, así que Vulkan + FastInterp es
+#   la mejor combinación posible en este móvil.
+#
+#  REQUISITOS: minSdk del proyecto = 29 (Android 10) => justo lo del Redmi 9A.
 # =============================================================================
 name: Azahar Redmi 9A (32 bits)
 
@@ -104,12 +115,14 @@ jobs:
             src/android/app/build.gradle.kts
 
       # ------------------------------------------------------------------ #
-      # Optimizaciones para el Helio G25 (Cortex-A53)                      #
+      # Optimizaciones Helio G25 + Vulkan garantizado                     #
       # ------------------------------------------------------------------ #
-      - name: Inyectar optimizaciones Cortex-A53
+      - name: Inyectar optimizaciones Cortex-A53 y forzar -DENABLE_VULKAN=ON
         run: |
-          sed -i 's|"-DENABLE_GDBSTUB=OFF" // Disable GDB stub|"-DENABLE_GDBSTUB=OFF", // Disable GDB stub\n                    "-DCMAKE_C_FLAGS=-mcpu=cortex-a53",\n                    "-DCMAKE_CXX_FLAGS=-mcpu=cortex-a53",\n                    "-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG -funroll-loops",\n                    "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -funroll-loops",\n                    "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O3 -DNDEBUG -funroll-loops",\n                    "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O3 -DNDEBUG -funroll-loops"|' \
+          sed -i 's|"-DENABLE_GDBSTUB=OFF" // Disable GDB stub|"-DENABLE_GDBSTUB=OFF", // Disable GDB stub\n                    "-DCMAKE_C_FLAGS=-mcpu=cortex-a53",\n                    "-DCMAKE_CXX_FLAGS=-mcpu=cortex-a53",\n                    "-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG -funroll-loops",\n                    "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -funroll-loops",\n                    "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O3 -DNDEBUG -funroll-loops",\n                    "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O3 -DNDEBUG -funroll-loops",\n                    "-DENABLE_VULKAN=ON", // Backend Vulkan: la GE8320 del Redmi 9A lo soporta|' \
             src/android/app/build.gradle.kts
+          grep -q 'ENABLE_VULKAN=ON' src/android/app/build.gradle.kts \
+            || echo "::warning::No se pudo inyectar ENABLE_VULKAN (cambió build.gradle.kts upstream)"
           grep -q 'mcpu=cortex-a53' src/android/app/build.gradle.kts \
             || echo "::warning::No se pudieron inyectar las optimizaciones (cambió build.gradle.kts upstream)"
           sed -n '/arguments(/,/^                )/p' src/android/app/build.gradle.kts

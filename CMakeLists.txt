@@ -431,8 +431,11 @@ find_package(tsl-robin-map QUIET)
 # CMake generate step ("Target video_core links to: tsl::robin_map"). Expose
 # the header-only target from the same bundled source tree directly instead.
 if (NOT TARGET tsl::robin_map AND NOT ("x86_64" IN_LIST ARCHITECTURE OR "arm64" IN_LIST ARCHITECTURE))
-    add_library(tsl::robin_map INTERFACE)
-    target_include_directories(tsl::robin_map INTERFACE
+    # IMPORTED is required: a non-imported target cannot have a "tsl::" style
+    # name (names with "::" are reserved for imported/alias targets).
+    add_library(tsl::robin_map INTERFACE IMPORTED)
+    set_target_properties(tsl::robin_map PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES
         "${PROJECT_SOURCE_DIR}/externals/dynarmic/externals/robin-map/include")
     message(STATUS "Using the robin_map headers bundled with dynarmic")
 endif()

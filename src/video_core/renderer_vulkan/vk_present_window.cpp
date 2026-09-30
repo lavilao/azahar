@@ -169,7 +169,8 @@ PresentWindow::~PresentWindow() {
         device.destroyFramebuffer(frame.framebuffer);
         device.destroySemaphore(frame.render_ready);
         device.destroyFence(frame.present_done);
-        vmaDestroyImage(instance.GetAllocator(), frame.image, frame.allocation);
+        vmaDestroyImage(instance.GetAllocator(), static_cast<VkImage>(frame.image),
+                        frame.allocation);
     }
 }
 
@@ -182,7 +183,8 @@ void PresentWindow::RecreateFrame(Frame* frame, u32 width, u32 height) {
         device.destroyImageView(frame->image_view);
     }
     if (frame->image) {
-        vmaDestroyImage(instance.GetAllocator(), frame->image, frame->allocation);
+        vmaDestroyImage(instance.GetAllocator(), static_cast<VkImage>(frame->image),
+                        frame->allocation);
     }
 
     const vk::Format format = swapchain.GetSurfaceFormat().format;

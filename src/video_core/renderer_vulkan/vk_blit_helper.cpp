@@ -702,9 +702,18 @@ vk::Pipeline BlitHelper::MakeFilterPipeline(vk::ShaderModule fragment_shader,
 
     const VkShaderModule c_shader = static_cast<VkShaderModule>(fragment_shader);
     const VkPipelineLayout c_layout = static_cast<VkPipelineLayout>(layout);
+    // En 64 bits los handles Vulkan no despachables son punteros y hay que
+    // reinterpretarlos a uintptr_t para hashearlos; en 32 bits ya son enteros
+    // de 64 bits y reinterpret_cast a uintptr_t (u32) no compila.
+    const auto HandleAsU64 = [](auto handle) -> u64 {
+#if (VK_USE_64_BIT_PTR_DEFINES == 1)
+        return static_cast<u64>(reinterpret_cast<uintptr_t>(handle));
+#else
+        return static_cast<u64>(handle);
+#endif
+    };
     const u64 cache_key = Common::HashCombine(
-        Common::HashCombine(static_cast<u64>(reinterpret_cast<uintptr_t>(c_shader)),
-                            static_cast<u64>(reinterpret_cast<uintptr_t>(c_layout))),
+        Common::HashCombine(HandleAsU64(c_shader), HandleAsU64(c_layout)),
         static_cast<u64>(color_format));
 
     if (const auto it = filter_pipeline_cache.find(cache_key); it != filter_pipeline_cache.end()) {

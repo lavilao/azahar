@@ -276,7 +276,7 @@ void Handle::Destroy() {
     }
 
     if (allocation) {
-        vmaDestroyImage(instance.GetAllocator(), image, allocation);
+        vmaDestroyImage(instance.GetAllocator(), static_cast<VkImage>(image), allocation);
     }
 
     image = vk::Image{};

@@ -153,7 +153,11 @@ RendererVulkan::~RendererVulkan() {
 
     for (auto& info : screen_infos) {
         device.destroyImageView(info.texture.image_view);
-        vmaDestroyImage(instance.GetAllocator(), info.texture.image, info.texture.allocation);
+        // static_cast<VkImage>: en 32 bits el operador de conversion del
+        // wrapper vk::Image a su handle C es explicit (VK_NULL_HANDLE 0ULL
+        // no convierte implicitamente); ver libretro_vk.cpp para el modismo.
+        vmaDestroyImage(instance.GetAllocator(), static_cast<VkImage>(info.texture.image),
+                        info.texture.allocation);
     }
 
     device.destroyPipeline(cursor_pipeline);
@@ -613,7 +617,8 @@ void RendererVulkan::ConfigureFramebufferTexture(TextureInfo& texture,
         device.destroyImageView(texture.image_view);
     }
     if (texture.image) {
-        vmaDestroyImage(instance.GetAllocator(), texture.image, texture.allocation);
+        vmaDestroyImage(instance.GetAllocator(), static_cast<VkImage>(texture.image),
+                        texture.allocation);
     }
 
     const VideoCore::PixelFormat pixel_format =
@@ -1316,8 +1321,8 @@ void RendererVulkan::RenderScreenshotWithStagingCopy() {
     }
 
     // Destroy allocated resources
-    vmaDestroyBuffer(instance.GetAllocator(), staging_buffer, allocation);
-    vmaDestroyImage(instance.GetAllocator(), frame.image, frame.allocation);
+    vmaDestroyBuffer(instance.GetAllocator(), static_cast<VkBuffer>(staging_buffer), allocation);
+    vmaDestroyImage(instance.GetAllocator(), static_cast<VkImage>(frame.image), frame.allocation);
     device.destroyFramebuffer(frame.framebuffer);
     device.destroyImageView(frame.image_view);
 }

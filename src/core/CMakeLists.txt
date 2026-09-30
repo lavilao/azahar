@@ -544,11 +544,18 @@ if ("x86_64" IN_LIST ARCHITECTURE OR "arm64" IN_LIST ARCHITECTURE)
         arm/dynarmic/arm_dynarmic_cp15.h
         arm/dynarmic/arm_exclusive_monitor.cpp
         arm/dynarmic/arm_exclusive_monitor.h
-        arm/dynarmic/arm_tick_counts.cpp
-        arm/dynarmic/arm_tick_counts.h
     )
     target_link_libraries(citra_core PRIVATE dynarmic)
 endif()
+
+# arm_tick_counts es una tabla pura de costes por instruccion (sin ninguna
+# dependencia de dynarmic): FastInterp, que si se compila en ARM32, la llama
+# para su modelo de ticks, asi que debe compilarse en todas las arquitecturas
+# y no solo junto al bloque de dynarmic de 64 bits.
+target_sources(citra_core PRIVATE
+    arm/dynarmic/arm_tick_counts.cpp
+    arm/dynarmic/arm_tick_counts.h
+)
 
 # FastInterp's dispatch loop requires GCC/Clang computed goto; MSVC builds
 # fall back to DynCom when the JIT is off.

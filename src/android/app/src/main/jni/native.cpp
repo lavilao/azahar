@@ -1242,7 +1242,12 @@ void Java_org_citra_citra_1emu_NativeLibrary_logDeviceInfo([[maybe_unused]] JNIE
                                                            [[maybe_unused]] jobject obj) {
     LOG_INFO(Frontend, "Azahar Version: {} | {}-{}", Common::g_build_fullname, Common::g_scm_branch,
              Common::g_scm_desc);
+#if CITRA_ARCH(arm64) || CITRA_ARCH(x86_64)
     LOG_INFO(Frontend, "Host CPU: {}", Common::GetCPUCaps().cpu_string);
+#else
+    // 32-bit ARM: no CPU caps detection is compiled in this configuration.
+    LOG_INFO(Frontend, "Host CPU: ARM (32-bit)");
+#endif
     // There is no decent way to get the OS version, so we log the API level instead.
     LOG_INFO(Frontend, "Host OS: Android API level {}", android_get_device_api_level());
 }

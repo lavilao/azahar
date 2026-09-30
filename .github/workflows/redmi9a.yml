@@ -6,7 +6,8 @@
 #  repo (este workflow NO parchea nada con sed):
 #    - src/android/app/build.gradle.kts: abiFilter = armeabi-v7a (la MIUI del
 #      Redmi 9A es de 32 bits: NO instalará APKs arm64-v8a), backend Vulkan
-#      forzado (-DENABLE_VULKAN=ON) y flags -mcpu=cortex-a53 / -O3.
+#      forzado (-DENABLE_VULKAN=ON) y flags -mcpu=cortex-a7 / -O3 (cortex-a7 =
+#      ARMv7VE con idiv/NEON/FMA sin confundir la detección de arquitectura).
 #    - CMakeLists.txt: target tsl::robin_map disponible en 32 bits (fix del
 #      error "Target video_core links to tsl::robin_map" — armeabi-v7a no
 #      compila dynarmic, que es donde iba bundled robin_map).

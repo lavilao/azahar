@@ -21,7 +21,10 @@ plugins {
  * next 680 years.
  */
 val autoVersion = (((System.currentTimeMillis() / 1000) - 1451606400) / 10).toInt()
-val abiFilter = listOf("arm64-v8a", "x86_64")
+// Redmi 9A (Helio G25): su MIUI es de 32 bits, por lo que SOLO ejecuta APKs
+// armeabi-v7a (un APK arm64-v8a no se puede instalar). Sustituye al original
+// listOf("arm64-v8a", "x86_64").
+val abiFilter = listOf("armeabi-v7a")
 
 val downloadedJniLibsPath = "${layout.buildDirectory.get().asFile.path}/downloadedJniLibs"
 
@@ -80,9 +83,23 @@ android {
                     "-DENABLE_QT=0", // Don't use QT
                     "-DENABLE_SDL2=0", // Don't use SDL
                     "-DANDROID_ARM_NEON=true", // cryptopp requires Neon to work
-                    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", // Support Android 15 16KiB page
-                    // sizes
-                    "-DENABLE_GDBSTUB=OFF" // Disable GDB stub
+                    "-DENABLE_GDBSTUB=OFF", // Disable GDB stub
+                    // Redmi 9A (Helio G25 / PowerVR GE8320): forzar el backend Vulkan
+                    // del renderizador (la GPU del telefono SI soporta Vulkan;
+                    // se selecciona en runtime en Ajustes -> Video -> Renderizador,
+                    // con OpenGL ES como respaldo) y optimizar todo el codigo
+                    // nativo para sus 8x Cortex-A53 (idiv por hardware, NEON con FMA).
+                    // Nota: el APK queda especifico para Cortex-A53; no instalar en
+                    // ARMv7 sin division entera por hardware.
+                    // Se quita ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES (paginas de 16KB):
+                    // solo aplica a arm64 / Android 15+, no a 32 bits.
+                    "-DENABLE_VULKAN=ON",
+                    "-DCMAKE_C_FLAGS=-mcpu=cortex-a53",
+                    "-DCMAKE_CXX_FLAGS=-mcpu=cortex-a53",
+                    "-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG -funroll-loops",
+                    "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -funroll-loops",
+                    "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O3 -DNDEBUG -funroll-loops",
+                    "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O3 -DNDEBUG -funroll-loops"
                 )
             }
         }

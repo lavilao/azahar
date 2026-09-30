@@ -426,6 +426,16 @@ endif()
 
 # Use system tsl::robin_map if available (otherwise we fallback to version bundled with dynarmic)
 find_package(tsl-robin-map QUIET)
+# On architectures where dynarmic is not built (e.g. 32-bit ARM / armeabi-v7a)
+# the robin_map copy bundled inside dynarmic is never added, which broke the
+# CMake generate step ("Target video_core links to: tsl::robin_map"). Expose
+# the header-only target from the same bundled source tree directly instead.
+if (NOT TARGET tsl::robin_map AND NOT ("x86_64" IN_LIST ARCHITECTURE OR "arm64" IN_LIST ARCHITECTURE))
+    add_library(tsl::robin_map INTERFACE)
+    target_include_directories(tsl::robin_map INTERFACE
+        "${PROJECT_SOURCE_DIR}/externals/dynarmic/externals/robin-map/include")
+    message(STATUS "Using the robin_map headers bundled with dynarmic")
+endif()
 
 # Platform-specific library requirements
 # ======================================

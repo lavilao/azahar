@@ -18,6 +18,18 @@
 #if defined(__aarch64__) || defined(__ARM_NEON)
 #define CITRA_HAS_NEON
 #include <arm_neon.h>
+
+// vmaxvq_u32 (reduccion horizontal de un vector) es una intrinseca exclusiva
+// de AArch64. En ARMv7 NEON se implementa con la cadena clasica de vpmax.
+static inline u32 HorizontalMaxU32(uint32x4_t v) {
+#if defined(__aarch64__)
+    return vmaxvq_u32(v);
+#else
+    uint32x2_t m = vpmax_u32(vget_low_u32(v), vget_high_u32(v)); // {max(v0,v2), max(v1,v3)}
+    m = vpmax_u32(m, m);                                         // {max(total), max(total)}
+    return vget_lane_u32(m, 0);
+#endif
+}
 #endif
 
 #if defined(_MSC_VER)
@@ -190,7 +202,7 @@ static inline u32 ProcessBlockNEON(u32* dst, const u32* values) {
     const uint32x4_t neq = vmvnq_u32(vceqq_u32(old_vals, new_vals));
 
     // If neq is all 0, old_vals and new_vals are equal, return.
-    if (vmaxvq_u32(neq) == 0) {
+    if (HorizontalMaxU32(neq) == 0) {
         return std::numeric_limits<u32>::max();
     }
 
@@ -204,7 +216,7 @@ static inline u32 ProcessBlockNEON(u32* dst, const u32* values) {
     // result.
     static constexpr u32 index_arr[4] = {0, 1, 2, 3};
     const uint32x4_t indices = vld1q_u32(index_arr);
-    return vmaxvq_u32(vandq_u32(neq, indices));
+    return HorizontalMaxU32(vandq_u32(neq, indices));
 }
 #endif
 

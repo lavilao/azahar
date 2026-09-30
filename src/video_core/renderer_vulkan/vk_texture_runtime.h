@@ -53,10 +53,10 @@ struct Handle {
     Handle(const Handle& other) = delete;
 
     Handle(Handle&& other) noexcept
-        : instance(other.instance), allocation(std::exchange(other.allocation, VK_NULL_HANDLE)),
-          image(std::exchange(other.image, VK_NULL_HANDLE)),
+        : instance(other.instance), allocation(std::exchange(other.allocation, nullptr)),
+          image(std::exchange(other.image, vk::Image{})),
           image_views(std::exchange(other.image_views, {})),
-          framebuffer(std::exchange(other.framebuffer, VK_NULL_HANDLE)),
+          framebuffer(std::exchange(other.framebuffer, vk::Framebuffer{})),
           width(std::exchange(other.width, 0)), height(std::exchange(other.height, 0)),
           levels(std::exchange(other.levels, 0)), layers(std::exchange(other.layers, 0)) {}
 
@@ -66,10 +66,10 @@ struct Handle {
         if (this == &other)
             return *this;
 
-        allocation = std::exchange(other.allocation, VK_NULL_HANDLE);
-        image = std::exchange(other.image, VK_NULL_HANDLE);
+        allocation = std::exchange(other.allocation, nullptr);
+        image = std::exchange(other.image, vk::Image{});
         image_views = std::exchange(other.image_views, {});
-        framebuffer = std::exchange(other.framebuffer, VK_NULL_HANDLE);
+        framebuffer = std::exchange(other.framebuffer, vk::Framebuffer{});
         width = std::exchange(other.width, 0);
         height = std::exchange(other.height, 0);
         levels = std::exchange(other.levels, 0);
@@ -303,8 +303,8 @@ public:
         : VideoCore::FramebufferParams(std::move(other)), instance(other.instance),
           images(std::exchange(other.images, {})),
           image_views(std::exchange(other.image_views, {})),
-          framebuffer(std::exchange(other.framebuffer, VK_NULL_HANDLE)),
-          render_pass(std::exchange(other.render_pass, VK_NULL_HANDLE)),
+          framebuffer(std::exchange(other.framebuffer, vk::Framebuffer{})),
+          render_pass(std::exchange(other.render_pass, vk::RenderPass{})),
           framebuffer_views(std::move(other.framebuffer_views)),
           aspects(std::exchange(other.aspects, {})),
           formats(std::exchange(
@@ -316,8 +316,8 @@ public:
         VideoCore::FramebufferParams::operator=(std::move(other));
         images = std::exchange(other.images, {});
         image_views = std::exchange(other.image_views, {});
-        framebuffer = std::exchange(other.framebuffer, VK_NULL_HANDLE);
-        render_pass = std::exchange(other.render_pass, VK_NULL_HANDLE);
+        framebuffer = std::exchange(other.framebuffer, vk::Framebuffer{});
+        render_pass = std::exchange(other.render_pass, vk::RenderPass{});
         framebuffer_views = std::move(other.framebuffer_views);
         aspects = std::exchange(other.aspects, {});
         formats = std::exchange(other.formats,

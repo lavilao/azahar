@@ -99,7 +99,7 @@ bool Swapchain::AcquireNextImage() {
     const vk::Device device = instance.GetDevice();
     const vk::Result result =
         device.acquireNextImageKHR(swapchain, std::numeric_limits<u64>::max(),
-                                   image_acquired[frame_index], VK_NULL_HANDLE, &image_index);
+                                   image_acquired[frame_index], vk::Fence{}, &image_index);
 
     switch (result) {
     case vk::Result::eSuccess:
@@ -262,7 +262,9 @@ void Swapchain::Destroy() {
     vk::Device device = instance.GetDevice();
     if (swapchain) {
         device.destroySwapchainKHR(swapchain);
-        swapchain = VK_NULL_HANDLE;
+        // vk::SwapchainKHR{} en vez de VK_NULL_HANDLE: en 32 bits VK_NULL_HANDLE
+        // es 0ULL y no hay conversion implicita al wrapper C++ de vulkan.hpp.
+        swapchain = vk::SwapchainKHR{};
     }
     for (u32 i = 0; i < image_count; i++) {
         device.destroySemaphore(image_acquired[i]);

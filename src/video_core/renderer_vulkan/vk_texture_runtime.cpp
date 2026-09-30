@@ -270,15 +270,17 @@ void Handle::Destroy() {
 
     if (framebuffer) {
         device.destroyFramebuffer(framebuffer);
-        framebuffer = VK_NULL_HANDLE;
+        // vk::Framebuffer{}: VK_NULL_HANDLE es 0ULL en 32 bits y no convierte
+        // al wrapper C++ de vulkan.hpp (ver comentario en vk_swapchain.cpp).
+        framebuffer = vk::Framebuffer{};
     }
 
     if (allocation) {
         vmaDestroyImage(instance.GetAllocator(), image, allocation);
     }
 
-    image = VK_NULL_HANDLE;
-    allocation = VK_NULL_HANDLE;
+    image = vk::Image{};
+    allocation = nullptr;
 }
 
 TextureRuntime::TextureRuntime(const Instance& instance, Scheduler& scheduler,

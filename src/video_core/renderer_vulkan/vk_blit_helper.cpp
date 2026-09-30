@@ -402,9 +402,11 @@ bool BlitHelper::BlitDepthStencil(Surface& source, Surface& dest,
 bool BlitHelper::ConvertDS24S8ToRGBA8(Surface& source, Surface& dest,
                                       const VideoCore::TextureCopy& copy) {
     const auto descriptor_set = compute_provider.Commit();
-    update_queue.AddImageSampler(descriptor_set, 0, 0, source.DepthView(), VK_NULL_HANDLE,
+    // vk::Sampler{}: VK_NULL_HANDLE es 0ULL en 32 bits y no convierte al
+    // wrapper C++ de vulkan.hpp (ver comentario en vk_swapchain.cpp).
+    update_queue.AddImageSampler(descriptor_set, 0, 0, source.DepthView(), vk::Sampler{},
                                  vk::ImageLayout::eDepthStencilReadOnlyOptimal);
-    update_queue.AddImageSampler(descriptor_set, 1, 0, source.StencilView(), VK_NULL_HANDLE,
+    update_queue.AddImageSampler(descriptor_set, 1, 0, source.StencilView(), vk::Sampler{},
                                  vk::ImageLayout::eDepthStencilReadOnlyOptimal);
     update_queue.AddStorageImage(descriptor_set, 2, dest.ImageView());
 
@@ -627,7 +629,9 @@ vk::Pipeline BlitHelper::MakeDepthStencilBlitPipeline() {
         LOG_CRITICAL(Render_Vulkan, "Depth stencil blit pipeline creation failed!");
         UNREACHABLE();
     }
-    return VK_NULL_HANDLE;
+    // vk::Pipeline{}: VK_NULL_HANDLE es 0ULL en 32 bits y no convierte al
+    // wrapper C++ de vulkan.hpp (ver comentario en vk_swapchain.cpp).
+    return vk::Pipeline{};
 }
 
 bool BlitHelper::Filter(Surface& surface, const VideoCore::TextureBlit& blit) {

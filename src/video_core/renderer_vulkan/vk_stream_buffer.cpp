@@ -252,7 +252,9 @@ void StreamBuffer::CreateBuffers(u64 preferred_size) {
             // Allocation failed, clean up and retry smaller
             if (buffer) {
                 device.destroyBuffer(buffer);
-                buffer = VK_NULL_HANDLE;
+                // vk::Buffer{}: VK_NULL_HANDLE es 0ULL en 32 bits y no
+                // convierte al wrapper C++ de vulkan.hpp.
+                buffer = vk::Buffer{};
             }
 
             attempt_size /= 2;

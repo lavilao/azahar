@@ -36,7 +36,14 @@ class NDKMotion final : public Input::MotionDevice {
 
     mutable std::atomic<Vec3<float>> acceleration{};
     mutable std::atomic<Vec3<float>> rotation{};
+// Vec3<float> ocupa 12 bytes: solo es lock-free en LP64 (x86_64/arm64).
+// En ARMv7 (ILP32) los exclusivos duales cubren 8 bytes como maximo, asi que
+// std::atomic<Vec3<float>> pasa a usar el mecanismo con cerrojos de
+// bionic/libc++. Aceptable aqui: son muestras del sensor de movimiento a
+// ~100 Hz leidas una vez por frame, no una seccion critica caliente.
+#if defined(__LP64__)
     static_assert(decltype(acceleration)::is_always_lock_free, "vectors are not lock free");
+#endif
     std::thread poll_thread;
     std::atomic<bool> stop_polling = false;
 

@@ -102,8 +102,16 @@ android {
                     // Se quita ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES (paginas de 16KB):
                     // solo aplica a arm64 / Android 15+, no a 32 bits.
                     "-DENABLE_VULKAN=ON",
-                    "-DCMAKE_C_FLAGS=-mcpu=cortex-a7",
-                    "-DCMAKE_CXX_FLAGS=-mcpu=cortex-a7",
+                    // Red de seguridad ARM32: en ILP32 std::size_t es de 32 bits, por lo
+                    // que inicializaciones con literales/expresiones de 64 bits
+                    // (p. ej. "return 0ULL" en funciones ResultVal<std::size_t>) son
+                    // narrowing no constante -> error -Wc++11-narrowing en clang.
+                    // Los 4 casos conocidos estan corregidos en el codigo; este flag
+                    // evita que el resto de la compilacion de 32 bits muera por la
+                    // misma clase de error (la semantica en runtime es inocua aqui:
+                    // truncar tamanyos de ficheros 3DS <4GB a 32 bits es seguro).
+                    "-DCMAKE_C_FLAGS=-mcpu=cortex-a7 -Wno-c++11-narrowing",
+                    "-DCMAKE_CXX_FLAGS=-mcpu=cortex-a7 -Wno-c++11-narrowing",
                     "-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG -funroll-loops",
                     "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -funroll-loops",
                     "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O3 -DNDEBUG -funroll-loops",

@@ -43,7 +43,10 @@ public:
         if (offset > size) {
             return ResultWriteBeyondEnd;
         } else if (offset == size) {
-            return 0ULL;
+            // std::size_t{0} en vez de 0ULL: en ARM32 std::size_t es de 32 bits y
+            // 0ULL (unsigned long long) provocaria un narrowing no constante en el
+            // constructor de ResultVal/Expected (error -Wc++11-narrowing en clang).
+            return std::size_t{0};
         }
 
         if (offset + length > size) {

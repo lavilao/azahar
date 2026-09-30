@@ -105,7 +105,8 @@ ResultVal<std::size_t> IVFCFile::Write(const u64 offset, const std::size_t lengt
                                        const bool update_timestamp, const u8* buffer) {
     LOG_ERROR(Service_FS, "Attempted to write to IVFC file");
     // TODO(Subv): Find error code
-    return 0ULL;
+    // std::size_t{0}: ver comentario en archive_extsavedata.cpp (narrowing en ARM32).
+    return std::size_t{0};
 }
 
 u64 IVFCFile::GetSize() const {
@@ -137,7 +138,8 @@ ResultVal<std::size_t> IVFCFileInMemory::Write(const u64 offset, const std::size
                                                const u8* buffer) {
     LOG_ERROR(Service_FS, "Attempted to write to IVFC file");
     // TODO(Subv): Find error code
-    return 0ULL;
+    // std::size_t{0}: ver comentario en archive_extsavedata.cpp (narrowing en ARM32).
+    return std::size_t{0};
 }
 
 u64 IVFCFileInMemory::GetSize() const {

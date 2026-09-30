@@ -107,6 +107,14 @@ namespace Common {
     return __sync_bool_compare_and_swap(pointer, expected, value);
 }
 
+// Las tres funciones de abajo usan unsigned __int128, un tipo extension de
+// GCC/Clang que NO existe en objetivos de 32 bits (ARMv7/ILP32): "__int128 is
+// not supported on this target". Como no son plantillas, el mero hecho de
+// incluir esta cabecera en ARM32 rompe la compilacion, aunque nadie las llame
+// (los unicos usuarios de WriteExclusive/CAS son de 8/16/32/64 bits, que
+// corresponden a los exclusivos LDREX/STREX del ARM11 de la 3DS). Se compilan
+// solo donde el compilador define __SIZEOF_INT128__ (x86_64, arm64...).
+#if defined(__SIZEOF_INT128__)
 [[nodiscard]] inline bool AtomicCompareAndSwap(volatile u64* pointer, u128 value, u128 expected) {
     unsigned __int128 value_a;
     unsigned __int128 expected_a;
@@ -114,6 +122,7 @@ namespace Common {
     std::memcpy(&expected_a, expected.data(), sizeof(u128));
     return __sync_bool_compare_and_swap((unsigned __int128*)pointer, expected_a, value_a);
 }
+#endif
 
 [[nodiscard]] inline bool AtomicCompareAndSwap(volatile u8* pointer, u8 value, u8 expected,
                                                u8& actual) {
@@ -139,6 +148,7 @@ namespace Common {
     return actual == expected;
 }
 
+#if defined(__SIZEOF_INT128__)
 [[nodiscard]] inline bool AtomicCompareAndSwap(volatile u64* pointer, u128 value, u128 expected,
                                                u128& actual) {
     unsigned __int128 value_a;
@@ -150,7 +160,9 @@ namespace Common {
     std::memcpy(actual.data(), &actual_a, sizeof(u128));
     return actual_a == expected_a;
 }
+#endif
 
+#if defined(__SIZEOF_INT128__)
 [[nodiscard]] inline u128 AtomicLoad128(volatile u64* pointer) {
     unsigned __int128 zeros_a = 0;
     unsigned __int128 result_a =
@@ -160,6 +172,7 @@ namespace Common {
     std::memcpy(result.data(), &result_a, sizeof(u128));
     return result;
 }
+#endif
 
 #endif
 

@@ -1,0 +1,42 @@
+name: zakuro android
+
+# Builds the zakuro 3DS emulator (with recompiled-game support for the
+# Redmi 9A) from the `zakuro-android` orphan branch of this repo, producing
+# zakuro-redmi9a.apk. The source of the emulator lives on that branch; this
+# workflow lives on master so GitHub registers it and it can be dispatched.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [zakuro-android]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: the zakuro source
+        uses: actions/checkout@v4
+        with:
+          ref: zakuro-android
+
+      - name: set up the Android SDK pieces and the NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "build-tools;34.0.0" "platforms;android-34" "ndk;27c" >/dev/null
+          echo "ANDROID_SDK=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=$(ls -d "$ANDROID_HOME"/ndk/* | head -1)" >> "$GITHUB_ENV"
+
+      - name: the Rust target the phone runs
+        run: rustup target add thumbv7neon-linux-androideabi
+
+      - name: build the APK
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: "0"
+        run: bash android/build_apk.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zakuro-redmi9a
+          path: android/zakuro-redmi9a.apk
+          if-no-files-found: error

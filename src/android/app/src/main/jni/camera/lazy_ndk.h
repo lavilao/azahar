@@ -69,7 +69,7 @@ struct LazyFuncTable {
     bool ok = false;
 };
 
-namespace detail {
+namespace lazy_impl {
 
 template <typename T>
 void LoadSym(void* handle, T& fn, const char* name) {
@@ -147,11 +147,11 @@ inline const LazyFuncTable& LoadTable() {
     return *table;
 }
 
-} // namespace detail
+} // namespace lazy_impl
 
 /// tabla de funciones de la camara (carga las bibliotecas la primera vez)
 inline const LazyFuncTable& Cam() {
-    return detail::LoadTable();
+    return lazy_impl::LoadTable();
 }
 
 /// ¿esta disponible la camara NDK? (sin forzar la carga)

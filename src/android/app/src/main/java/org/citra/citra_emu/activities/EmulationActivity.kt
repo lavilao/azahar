@@ -56,6 +56,7 @@ import org.citra.citra_emu.utils.FileBrowserHelper
 import org.citra.citra_emu.utils.Log
 import org.citra.citra_emu.utils.NetPlayManager
 import org.citra.citra_emu.utils.PermissionsHandler
+import org.citra.citra_emu.utils.RecompLibraryHelper
 import org.citra.citra_emu.utils.RefreshRateUtil
 import org.citra.citra_emu.utils.ThemeUtil
 import org.citra.citra_emu.viewmodel.EmulationViewModel
@@ -173,6 +174,11 @@ class EmulationActivity : AppCompatActivity() {
         }
 
         NativeLibrary.playTimeManagerStart(game.titleId)
+
+        // libreria recompilada AOT del titulo (si el usuario la puso en
+        // <directorio de usuario>/recomp/): copiarla al almacenamiento
+        // privado y avisar al nucleo antes de que arranque la emulacion
+        RecompLibraryHelper.prepare(game)
     }
 
     override fun onNewIntent(intent: Intent) {

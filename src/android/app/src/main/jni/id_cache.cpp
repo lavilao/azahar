@@ -13,6 +13,7 @@
 #include "jni/applets/swkbd.h"
 #include "jni/camera/still_image_camera.h"
 #include "jni/id_cache.h"
+#include "jni/crash_handler.h"
 #include "multiplayer.h"
 
 #include <jni.h>
@@ -175,6 +176,10 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     JNIEnv* env;
     if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION) != JNI_OK)
         return JNI_ERR;
+
+    // la ruta del informe de senales la fija la interfaz Java en cuanto
+    // arranca; instalar ya los gestores no cuesta nada
+    CrashHandler::Install("");
 
     // Initialize misc classes
     s_savestate_info_class = reinterpret_cast<jclass>(

@@ -569,6 +569,16 @@ if (NOT MSVC)
         arm/fastinterp/fastinterp_flags.h
         arm/fastinterp/fastinterp_types.h
     )
+    # backend de CPU con codigo recompilado AOT (3dsrecomp): ejecuta los
+    # .so generados por titulo a velocidad nativa y cae a FastInterp para
+    # lo que no cubren. En 32 bits es el sustituto del JIT.
+    target_sources(citra_core PRIVATE
+        arm/recomp/recomp_abi.h
+        arm/recomp/recomp_manager.cpp
+        arm/recomp/recomp_manager.h
+        arm/recomp/arm_recomp.cpp
+        arm/recomp/arm_recomp.h
+    )
 endif()
 
 if (CITRA_USE_PRECOMPILED_HEADERS)

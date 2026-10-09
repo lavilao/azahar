@@ -10,6 +10,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import org.citra.citra_emu.utils.CrashDiagnostics
 import org.citra.citra_emu.utils.DirectoryInitialization
 import org.citra.citra_emu.utils.DocumentsTree
 import org.citra.citra_emu.utils.GraphicsUtil
@@ -51,14 +52,27 @@ class CitraApplication : Application() {
         super.onCreate()
         application = this
         documentsTree = DocumentsTree()
+
+        // diagnosticos de cierres inesperados (java y nativos) antes de
+        // tocar cualquier cosa del nucleo
+        CrashDiagnostics.install(this)
+
         if (PermissionsHandler.hasWriteAccess(applicationContext)) {
             DirectoryInitialization.start()
         }
 
-        NativeLibrary.logDeviceInfo()
+        try {
+            NativeLibrary.logDeviceInfo()
+        } catch (ex: UnsatisfiedLinkError) {
+            android.util.Log.e("CitraApplication", "libreria nativa no cargo", ex)
+        }
         logDeviceInfo()
         createNotificationChannel()
-        NativeLibrary.playTimeManagerInit()
+        try {
+            NativeLibrary.playTimeManagerInit()
+        } catch (ex: UnsatisfiedLinkError) {
+            android.util.Log.e("CitraApplication", "playTimeManagerInit fallo", ex)
+        }
     }
 
     fun logDeviceInfo() {

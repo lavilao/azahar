@@ -104,7 +104,11 @@ class MainActivity :
         ThemeUtil.themeChangeListener(this)
         ThemeUtil.setTheme(this)
         super.onCreate(savedInstanceState)
-        NativeLibrary.initMultiplayer()
+        try {
+            NativeLibrary.initMultiplayer()
+        } catch (ex: UnsatisfiedLinkError) {
+            android.util.Log.e("MainActivity", "initMultiplayer fallo", ex)
+        }
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)

@@ -91,6 +91,14 @@ static const char* android_config_default_file_content = (BOOST_HANA_STRING(R"(
 # 0: Legacy, 1 (default): Fast
 )") DECLARE_KEY(use_fastinterp) BOOST_HANA_STRING(R"(
 
+[Core]
+# Whether to run this title's AOT-recompiled code from 3dsrecomp when its
+# library is available (recomp/<title id>.so, copied by the app into its
+# private storage), falling back to the fast interpreter elsewhere. This is
+# the way to reach full speed on 32-bit phones without a JIT.
+# 0: Off, 1 (default): On
+)") DECLARE_KEY(use_recomp) BOOST_HANA_STRING(R"(
+
 # Change the Clock Frequency of the emulated 3DS CPU.
 # Underclocking can increase the performance of the game at the risk of freezing.
 # Overclocking may fix lag that happens on console, but also comes with the risk of freezing.

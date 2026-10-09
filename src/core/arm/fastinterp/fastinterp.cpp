@@ -165,6 +165,67 @@ void ARM_FastInterp::Step() {
     timer->AddTicks(executed > 0 ? executed : 1);
 }
 
+void ARM_FastInterp::StepOne() {
+    // ARM: el paso original ya vale
+    if (!state_.thumb_mode) {
+        Step();
+        return;
+    }
+
+    // Thumb: decodificar solo la primera instruccion, sin fusion, con el
+    // mismo trato de fuentes PC que Step() da al ARM (pipeline pc+4).
+    const u32 pc = state_.PC();
+
+    bool was_hit = false;
+    BasicBlock* block = cache_.LookupOrAllocate(pc, was_hit);
+    block->inst_count = 0;
+    block->SetThumb(true);
+    block->start_pc = pc;
+    block->chain_target = nullptr;
+
+    const u16 thumb_inst = ReadMemory16(pc);
+    u32 raw_inst;
+    u32 inst_size;
+    u16 slot = 0;
+
+    if ((thumb_inst & 0xE000) == 0xE000 && (thumb_inst & 0x1800) != 0) {
+        // instruccion Thumb de 32 bits
+        const u16 thumb_inst2 = ReadMemory16(pc + 2);
+        raw_inst = (static_cast<u32>(thumb_inst) << 16) | thumb_inst2;
+        inst_size = 4;
+        DecodeThumb32(raw_inst, pc, block->instructions[0]);
+    } else {
+        raw_inst = thumb_inst;
+        inst_size = 2;
+        DecodeThumb16(raw_inst, pc, block->instructions[0]);
+    }
+
+    if (ReadsPcAsSource(block->instructions[0])) {
+        FoldPcSources(block->instructions[0], pc + 4);
+        if (ReadsPcAsSource(block->instructions[0])) {
+            block->instructions[1] = block->instructions[0];
+            DecodedInst& pfx = block->instructions[0];
+            std::memset(&pfx, 0, sizeof(pfx));
+            pfx.opcode = Opcode::PcSetup;
+            pfx.cond = 0xE;
+            pfx.imm32 = pc + 4;
+            slot = 1;
+        }
+    }
+    block->instructions[slot].ticks = static_cast<u8>(Core::TicksForInstruction(true, raw_inst));
+
+    // terminador EndBlock: DISPATCH no comprueba limites
+    DecodedInst& term = block->instructions[slot + 1];
+    std::memset(&term, 0, sizeof(term));
+    term.opcode = Opcode::EndBlock;
+    term.cond = 0xE;
+    block->inst_count = static_cast<u16>(slot + 1);
+    block->end_pc = pc + inst_size;
+
+    const u64 executed = ExecuteBlock(block);
+    timer->AddTicks(executed > 0 ? executed : 1);
+}
+
 // ============================================================================
 // Computed-Goto Dispatch Loop
 // ============================================================================

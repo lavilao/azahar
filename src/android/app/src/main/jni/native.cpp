@@ -36,6 +36,9 @@
 #include "common/settings.h"
 #include "common/string_util.h"
 #include "core/core.h"
+#ifdef HAVE_FASTINTERP
+#include "core/arm/recomp/arm_recomp.h"
+#endif
 #include "core/frontend/applets/default_applets.h"
 #include "core/frontend/camera/factory.h"
 #include "core/hle/service/am/am.h"
@@ -48,6 +51,7 @@
 #include "jni/android_common/android_common.h"
 #include "jni/applets/mii_selector.h"
 #include "jni/applets/swkbd.h"
+#include "jni/crash_handler.h"
 #include "jni/camera/ndk_camera.h"
 #include "jni/camera/still_image_camera.h"
 #include "jni/config.h"
@@ -1251,6 +1255,47 @@ void Java_org_citra_citra_1emu_NativeLibrary_logDeviceInfo([[maybe_unused]] JNIE
     // There is no decent way to get the OS version, so we log the API level instead.
     LOG_INFO(Frontend, "Host OS: Android API level {}", android_get_device_api_level());
 }
+
+// donde escribir el informe de senales nativas (diagnostico de cierres
+// inesperados): la ruta que la interfaz Java prepara al arrancar
+void Java_org_citra_citra_1emu_NativeLibrary_setCrashReportDir(JNIEnv* env,
+                                                                [[maybe_unused]] jobject obj,
+                                                                jstring jpath) {
+    const std::string path = GetJString(env, jpath);
+    CrashHandler::Install(path.c_str());
+    LOG_INFO(Frontend, "informe de cierres nativos: {}", path);
+}
+
+#ifdef HAVE_FASTINTERP
+// ruta de la libreria recompilada AOT (3dsrecomp) del juego que se va a
+// lanzar: la interfaz Java ya la copio al almacenamiento privado de la app,
+// unico sitio desde el que dlopen puede cargarla
+void Java_org_citra_citra_1emu_NativeLibrary_setRecompLibrary(JNIEnv* env,
+                                                              [[maybe_unused]] jobject obj,
+                                                              jstring jpath) {
+    Core::Recomp::LibraryManager::pending_library_path = GetJString(env, jpath);
+    if (Core::Recomp::LibraryManager::pending_library_path.empty()) {
+        LOG_INFO(Frontend, "sin libreria recompilada para el titulo");
+    } else {
+        LOG_INFO(Frontend, "libreria recompilada: {}",
+                 Core::Recomp::LibraryManager::pending_library_path);
+    }
+}
+
+jboolean Java_org_citra_citra_1emu_NativeLibrary_recompLibraryLoaded(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jobject obj) {
+    return Core::Recomp::ARM_Recomp::RecompActive();
+}
+
+// estadisticas del backend recomp al registro (cuantas instrucciones
+// corrieron recompiladas y cuantas por el interprete)
+void Java_org_citra_citra_1emu_NativeLibrary_recompStats([[maybe_unused]] JNIEnv* env,
+                                                          [[maybe_unused]] jobject obj) {
+    LOG_INFO(Frontend, "recomp: {} instrucciones recompiladas, {} por el interprete",
+             Core::Recomp::ARM_Recomp::recomp_instructions,
+             Core::Recomp::ARM_Recomp::fallback_instructions);
+}
+#endif
 
 jboolean Java_org_citra_citra_1emu_NativeLibrary_isFullConsoleLinked(JNIEnv* env, jobject obj) {
     return HW::UniqueData::IsFullConsoleLinked();

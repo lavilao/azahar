@@ -1,0 +1,133 @@
+# =============================================================================
+#  Recompilacion AOT de un juego para el Azahar de 32 bits (Redmi 9A)
+#
+#  Convierte el codigo de tu ROM en una libreria nativa armeabi-v7a que el
+#  emulador ejecuta a velocidad del telefono (sin JIT y sin interprete en el
+#  99,7% de las instrucciones). Usa el proyecto 3dsrecomp de fearkov:
+#  https://github.com/fearkov/3dsrecomp
+#
+#  COMO SE USA
+#   1. Sube tu ROM DESCIFRADA (dump propio, .3ds/.cxi des cifrado) a la
+#      carpeta `rom/` de este repositorio (privado, solo tu la ves).
+#      IMPORTANTE: la ROM debe estar descifrada; si 3dsrecomp dice
+#      "the dump is encrypted", descifrala primero (godmode9/aes_keys).
+#   2. Acciones -> "Recompilar juego para Redmi 9A" -> Run workflow.
+#      (opcional) escribe el nombre del archivo si no es rom/game.3ds.
+#   3. Al terminar descarga el artefacto "juego-recompilado": dentro hay un
+#      <ID-de-titulo>.so.
+#   4. Copia ese archivo al telefono en
+#      <tu directorio de Azahar>/recomp/
+#      (por ejemplo /storage/emulated/0/azahar/recomp/)
+#   5. Abre Azahar y lanza el juego: el log dira "codigo recompilado cargado"
+#      y la CPU ira a velocidad nativa.
+#
+#  El repositorio no distribuye nada: la ROM y la libreria generada viven en
+#  tu cuenta privada. El C generado procede de tu propio juego.
+# =============================================================================
+name: Recompilar juego para Redmi 9A
+
+on:
+  workflow_dispatch:
+    inputs:
+      rom_path:
+        description: 'Ruta de la ROM dentro del repo (por defecto rom/game.3ds)'
+        required: false
+        default: 'rom/game.3ds'
+
+permissions:
+  contents: read
+
+jobs:
+  recomp:
+    name: 3dsrecomp -> .so armeabi-v7a
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      # commit de 3dsrecomp probado con la ABI 4 que implementa el emulador
+      RE3DSCOMP_REF: 2f1dd343da08bfcd88f883f531fb158c8dffefef
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Comprobar la ROM
+        run: |
+          ROM="${{ github.event.inputs.rom_path || 'rom/game.3ds' }}"
+          if [ ! -f "$ROM" ]; then
+            echo "::error::No encuentro $ROM. Sube tu ROM descifrada a esa ruta del repositorio (carpeta rom/). Recuerda: debe estar descifrada."
+            exit 1
+          fi
+          ls -lh "$ROM"
+          echo "ROM_PATH=$ROM" >> "$GITHUB_ENV"
+
+      - name: Instalar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache de cargo (3dsrecomp)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            3dsrecomp/target
+          key: 3dsrecomp-${{ env.RE3DSCOMP_REF }}
+
+      - name: Clonar y compilar 3dsrecomp
+        run: |
+          git clone --depth 1 https://github.com/fearkov/3dsrecomp 3dsrecomp
+          cd 3dsrecomp
+          git fetch --depth 1 origin $RE3DSCOMP_REF
+          git checkout $RE3DSCOMP_REF
+          cargo build --release --locked
+          ./target/release/3dsrecomp --help || true
+          echo "3dsrecomp listo en $(pwd)/target/release/3dsrecomp"
+
+      - name: Instalar NDK 27.3
+        run: |
+          echo "y" | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager "ndk;27.3.13750724" > /dev/null
+
+      - name: Analizar el juego
+        run: |
+          TOOLCHAIN="${ANDROID_SDK_ROOT}/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          # clang de Android con objetivo armeabi-v7a: el mismo compilador y
+          # la misma ABI que usa el APK del telefono
+          export CC="$TOOLCHAIN/clang --target=armv7a-linux-androideabi29 -mcpu=cortex-a7 -mfloat-abi=softfp -mfpu=neon-vfpv4"
+          cd 3dsrecomp
+          ./target/release/3dsrecomp analyze "$GITHUB_WORKSPACE/$ROM_PATH" || true
+
+      - name: Recompilar y compilar para armeabi-v7a
+        run: |
+          TOOLCHAIN="${ANDROID_SDK_ROOT}/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CC="$TOOLCHAIN/clang --target=armv7a-linux-androideabi29 -mcpu=cortex-a7 -mfloat-abi=softfp -mfpu=neon-vfpv4"
+          cd 3dsrecomp
+          ./target/release/3dsrecomp build "$GITHUB_WORKSPACE/$ROM_PATH" "$GITHUB_WORKSPACE/out"
+          ls -lh "$GITHUB_WORKSPACE/out/"
+
+      - name: Renombrar y recopilar
+        run: |
+          mkdir -p artifacts
+          cp out/*.so artifacts/
+          # el nombre ya es <title id>.so; guardar tambien un leeme
+          NAME=$(ls artifacts/ | head -1)
+          cat > artifacts/LEEME.txt <<EOF
+          Libreria recompilada: $NAME
+
+          1. Copiala en el telefono, en la carpeta recomp/ de tu directorio
+             de Azahar (ejemplo: /storage/emulated/0/azahar/recomp/).
+          2. La app la copiara sola a su almacenamiento interno al lanzar
+             el juego.
+          3. En Ajustes -> Registro puedes ver "codigo recompilado cargado"
+             cuando arranque.
+
+          Si cambias de version del juego (update/otro dump), recompila de
+          nuevo: el emulador detecta el codigo cambiado y lo interpreta (mas
+          lento) en lugar de usar la libreria vieja.
+          EOF
+          ls -lh artifacts/
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v7
+        with:
+          name: juego-recompilado-armv7
+          path: artifacts/*
+          if-no-files-found: error

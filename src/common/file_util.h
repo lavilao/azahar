@@ -67,6 +67,7 @@ enum class UserPath {
     LoadDir,
     LogDir,
     NANDDir,
+    RecompDir,
     RootDir,
     SDMCDir,
     ShaderDir,

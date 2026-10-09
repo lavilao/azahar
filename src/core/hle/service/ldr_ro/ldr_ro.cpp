@@ -8,6 +8,9 @@
 #include "common/logging/log.h"
 #include "core/arm/arm_interface.h"
 #include "core/core.h"
+#ifdef HAVE_FASTINTERP
+#include "core/arm/recomp/arm_recomp.h"
+#endif
 #include "core/hle/ipc_helpers.h"
 #include "core/hle/kernel/process.h"
 #include "core/hle/service/ldr_ro/cro_helper.h"
@@ -327,6 +330,13 @@ void RO::LoadCRO(Kernel::HLERequestContext& ctx, bool link_on_load_bug_fix) {
 
     system.InvalidateCacheRange(cro_address, cro_size);
 
+#ifdef HAVE_FASTINTERP
+    // avisar al backend recomp de donde quedo el modulo CRO para que su
+    // codigo recompilado corra a velocidad nativa tambien
+    Core::Recomp::ARM_Recomp::GetManager().PlaceModule(cro.ModuleName(), cro_address,
+                                                       system.Memory());
+#endif
+
     LOG_INFO(Service_LDR, "CRO \"{}\" loaded at 0x{:08X}, fixed_end=0x{:08X}", cro.ModuleName(),
              cro_address, cro_address + fix_size);
 
@@ -391,6 +401,10 @@ void RO::UnloadCRO(Kernel::HLERequestContext& ctx) {
     }
 
     cro.Unrebase(false);
+
+#ifdef HAVE_FASTINTERP
+    Core::Recomp::ARM_Recomp::GetManager().PlaceModule(cro.ModuleName(), 0, system.Memory());
+#endif
 
     result = process->Unmap(cro_address, cro_buffer_ptr, fixed_size,
                             Kernel::VMAPermission::ReadWrite, true);

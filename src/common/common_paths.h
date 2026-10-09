@@ -61,6 +61,8 @@
 #define SYSDATA_DIR "sysdata"
 #define LOG_DIR "log"
 #define CHEATS_DIR "cheats"
+// librerias de codigo recompilado AOT por 3dsrecomp, una por titulo
+#define RECOMP_DIR "recomp"
 #define DLL_DIR "external_dlls"
 #define SHADER_DIR "shaders"
 #define DUMP_DIR "dump"

@@ -485,6 +485,9 @@ struct Values {
     // Core
     Setting<bool> use_cpu_jit{true, Keys::use_cpu_jit};
     Setting<bool> use_fastinterp{true, Keys::use_fastinterp};
+    // ejecutar el codigo recompilado AOT (3dsrecomp) del titulo cuando haya
+    // libreria disponible: el resto pasa por el interprete de respaldo
+    Setting<bool> use_recomp{true, Keys::use_recomp};
     SwitchableSetting<s32, true> cpu_clock_percentage{100, 5, 400, Keys::cpu_clock_percentage};
     SwitchableSetting<bool> is_new_3ds{true, Keys::is_new_3ds};
     SwitchableSetting<bool> lle_applets{true, Keys::lle_applets};

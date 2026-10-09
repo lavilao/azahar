@@ -23,6 +23,7 @@
 #include "core/arm/dyncom/arm_dyncom.h"
 #ifdef HAVE_FASTINTERP
 #include "core/arm/fastinterp/fastinterp.h"
+#include "core/arm/recomp/arm_recomp.h"
 #endif
 #include "core/cheats/cheats.h"
 #include "core/core.h"
@@ -323,6 +324,16 @@ System::ResultStatus System::Load(Frontend::EmuWindow& emu_window, const std::st
 
     u64_le program_id = 0;
     app_loader->ReadProgramId(program_id);
+#ifdef HAVE_FASTINTERP
+    // codigo recompilado AOT (3dsrecomp): abrir la libreria del titulo
+    // antes de crear los nucleos, para que Run() la encuentre
+    {
+        const std::string recomp_info = Recomp::ARM_Recomp::OpenLibraryForTitle(program_id);
+        if (!recomp_info.empty()) {
+            LOG_INFO(Core, "{}", recomp_info);
+        }
+    }
+#endif
     if (restore_plugin_context.has_value() && restore_plugin_context->is_enabled &&
         restore_plugin_context->use_user_load_parameters) {
         if (restore_plugin_context->user_load_parameters.low_title_Id ==
@@ -474,6 +485,14 @@ System::ResultStatus System::Load(Frontend::EmuWindow& emu_window, const std::st
     cheat_engine.LoadCheatFile(title_id);
     cheat_engine.Connect(process->process_id);
 
+#ifdef HAVE_FASTINTERP
+    // el codigo del juego ya esta en memoria: comprobarlo contra lo que
+    // se recompilo (mods, versiones distintas) y desactivar lo cambiado
+    if (Recomp::ARM_Recomp::RecompActive()) {
+        Recomp::ARM_Recomp::GetManager().CheckStale(*memory);
+    }
+#endif
+
     perf_stats = std::make_unique<PerfStats>(title_id);
 
     if (Settings::values.dump_textures) {
@@ -554,17 +573,31 @@ System::ResultStatus System::Init(Frontend::EmuWindow& emu_window,
                 *this, *memory, i, timing->GetTimer(i), *exclusive_monitor));
         }
 #else
+#ifdef HAVE_FASTINTERP
+        // ARM32 no tiene JIT: el backend recomp ejecuta el codigo que
+        // 3dsrecomp genero para este titulo a velocidad nativa, y cae a
+        // FastInterp cuando no hay libreria. DynCom quedo como ultima
+        // opcion para quien la pida a proposito.
+        for (u32 i = 0; i < num_cores; ++i) {
+            cpu_cores.push_back(std::make_shared<Recomp::ARM_Recomp>(
+                *this, *memory, i, timing->GetTimer(i)));
+        }
+        LOG_WARNING(Core, "CPU JIT requested, but Dynarmic not available on 32-bit ARM: "
+                          "using the AOT recomp backend (FastInterp without a recompiled "
+                          "library)");
+#else
         for (u32 i = 0; i < num_cores; ++i) {
             cpu_cores.push_back(
                 std::make_shared<ARM_DynCom>(*this, *memory, USER32MODE, i, timing->GetTimer(i)));
         }
         LOG_WARNING(Core, "CPU JIT requested, but Dynarmic not available");
 #endif
+#endif
 #ifdef HAVE_FASTINTERP
-    } else if (Settings::values.use_fastinterp) {
+    } else if (Settings::values.use_fastinterp || Settings::values.use_recomp) {
         for (u32 i = 0; i < num_cores; ++i) {
-            cpu_cores.push_back(std::make_shared<FastInterp::ARM_FastInterp>(*this, *memory, i,
-                                                                             timing->GetTimer(i)));
+            cpu_cores.push_back(
+                std::make_shared<Recomp::ARM_Recomp>(*this, *memory, i, timing->GetTimer(i)));
         }
 #endif
     } else {
@@ -744,6 +777,11 @@ void System::Shutdown(bool is_deserializing) {
     service_manager.reset();
     dsp_core.reset();
     kernel.reset();
+#ifdef HAVE_FASTINTERP
+    // soltar la libreria recompilada del titulo anterior
+    Recomp::ARM_Recomp::GetManager().Close();
+    Recomp::LibraryManager::pending_library_path.clear();
+#endif
     cpu_cores.clear();
     exclusive_monitor.reset();
     timing.reset();

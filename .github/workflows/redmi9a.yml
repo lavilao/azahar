@@ -12,16 +12,17 @@
 #      error "Target video_core links to tsl::robin_map" — armeabi-v7a no
 #      compila dynarmic, que es donde iba bundled robin_map).
 #
+#  RENDIMIENTO EN 32 BITS
+#   En ARM32 no hay JIT de dynarmic. Este trae el backend RECOMP: el codigo
+#   del juego recompilado AOT con 3dsrecomp corre a velocidad nativa en la
+#   CPU del telefono (workflow "Recompilar juego para Redmi 9A"), y lo que
+#   no cubre pasa por el interprete rapido FastInterp. Sin libreria
+#   recompilada equivale a FastInterp.
+#
 #  VULKAN: tu Redmi 9A SÍ tiene Vulkan (PowerVR GE8320 del Helio G25). El APK
 #  compila AMBOS renderizadores (Vulkan + OpenGL ES); tras instalar, actívalo
 #  en: Ajustes -> Video -> Renderizador -> Vulkan (si algún juego pinta raro
 #  con el driver PowerVR, desde ese mismo menú vuelves a OpenGL ES).
-#
-#  RENDIMIENTO EN 32 BITS
-#   En ARM32 no hay JIT de dynarmic: la CPU se emula con el intérprete rápido
-#   FastInterp (use_cpu_jit=0 / use_fastinterp=1). Tener Vulkan en la GPU
-#   descarga buena parte del trabajo gráfico, así que Vulkan + FastInterp es
-#   la mejor combinación posible en este móvil.
 #
 #  REQUISITOS: minSdk del proyecto = 29 (Android 10) => justo lo del Redmi 9A.
 # =============================================================================

@@ -670,10 +670,24 @@ object NativeLibrary {
 
     external fun loadState(slot: Int)
 
-    /**
-     * Logs the Citra version, Android version and, CPU.
-     */
+    /** Logs the Citra version, Android version and, CPU. */
     external fun logDeviceInfo()
+
+    /** Where native crash reports (SIGSEGV etc.) get written. */
+    external fun setCrashReportDir(path: String)
+
+    /**
+     * AOT-recompiled (3dsrecomp) library for the game about to run: an
+     * absolute path inside the app's private storage, the only place
+     * dlopen can load from. Empty string = no library.
+     */
+    external fun setRecompLibrary(path: String)
+
+    /** Whether the running game is using its recompiled library. */
+    external fun recompLibraryLoaded(): Boolean
+
+    /** Logs recomp/fallback instruction statistics. */
+    external fun recompStats()
 
     enum class CompressStatus(val value: Int) {
         SUCCESS(0),

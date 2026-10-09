@@ -31,6 +31,10 @@ public:
 
     void Run() override;
     void Step() override;
+    /// Un solo paso respetando el modo actual (ARM o Thumb), con ticks:
+    /// respaldo exacto para el backend de codigo recompilado AOT (recomp),
+    /// que necesita avanzar de una en una instruccion en cualquier modo.
+    void StepOne();
     void ClearInstructionCache() override;
     void InvalidateCacheRange(u32 start_address, std::size_t length) override;
     void ClearExclusiveState() override;

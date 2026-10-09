@@ -372,6 +372,16 @@
     <string name="cpu_jit_description">Uses the Just-in-Time (JIT) compiler for CPU emulation. When enabled, game performance will be significantly improved.</string>
     <string name="use_fastinterp">Use Fast Interpreter</string>
     <string name="use_fastinterp_description">When the CPU JIT is disabled, use the fast interpreter instead of the legacy interpreter. Restart required.</string>
+
+    <!-- Exclusive CPU engine selector (32-bit ARM has no dynarmic JIT) -->
+    <string name="cpu_engine">CPU engine</string>
+    <string name="cpu_engine_description">Exclusive selection of the CPU emulation engine. AOT recompilation runs the game at near-native speed when its recompiled library is present, falling back to the fast interpreter otherwise. Changing this restarts emulation.</string>
+    <string name="cpu_engine_recomp">AOT recompilation (recommended)</string>
+    <string name="cpu_engine_fastinterp">Fast interpreter</string>
+    <string name="cpu_engine_dyncom">Reference interpreter (slow)</string>
+    <string name="recomp_missing_title">No recompiled library for this game</string>
+    <string name="recomp_missing_message">This game will run with the fast interpreter (slow). To run it at near-native speed: put the decrypted ROM in the rom/ folder of the GitHub project and run the "Recompile game for Redmi 9A" workflow, then copy the resulting .so file to the recomp/ folder of the app storage. The app will pick it up automatically on the next launch.</string>
+    <string name="recomp_missing_continue">Continue anyway</string>
     <string name="hw_shaders">Enable Hardware Shader</string>
     <string name="hw_shaders_description">Uses hardware to emulate 3DS shaders. When enabled, game performance will be significantly improved.</string>
     <string name="cpu_clock_speed">CPU Clock Speed</string>

@@ -3,13 +3,7 @@
 // Refer to the license.txt file included.
 
 #include <mutex>
-#include <camera/NdkCameraCaptureSession.h>
-#include <camera/NdkCameraDevice.h>
-#include <camera/NdkCameraManager.h>
-#include <camera/NdkCameraMetadata.h>
-#include <camera/NdkCaptureRequest.h>
 #include <libyuv.h>
-#include <media/NdkImageReader.h>
 #include "common/scope_exit.h"
 #include "common/thread.h"
 #include "core/frontend/camera/blank_camera.h"
@@ -450,6 +444,12 @@ std::shared_ptr<CaptureSession> Factory::CreateCaptureSession(const std::string&
 
 std::unique_ptr<CameraInterface> Factory::Create(const std::string& config,
                                                  const Service::CAM::Flip& flip) {
+    // bibliotecas del NDK cargadas perezosamente: si el dispositivo no las
+    // ofrece, la camara del emulador queda en blanco en vez de cerrar la app
+    if (!CamAvailable()) {
+        LOG_ERROR(Service_CAM, "NDK de camara no disponible");
+        return std::make_unique<Camera::BlankCamera>();
+    }
 
     manager.reset(ACameraManager_create());
     ACameraIdList* id_list = nullptr;

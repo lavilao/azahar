@@ -566,46 +566,55 @@ System::ResultStatus System::Init(Frontend::EmuWindow& emu_window,
 
     exclusive_monitor = MakeExclusiveMonitor(*memory, num_cores);
     cpu_cores.reserve(num_cores);
-    if (Settings::values.use_cpu_jit) {
 #if CITRA_ARCH(x86_64) || CITRA_ARCH(arm64)
+    if (Settings::values.use_cpu_jit) {
         for (u32 i = 0; i < num_cores; ++i) {
             cpu_cores.push_back(std::make_shared<ARM_Dynarmic>(
                 *this, *memory, i, timing->GetTimer(i), *exclusive_monitor));
         }
-#else
-#ifdef HAVE_FASTINTERP
-        // ARM32 no tiene JIT: el backend recomp ejecuta el codigo que
-        // 3dsrecomp genero para este titulo a velocidad nativa, y cae a
-        // FastInterp cuando no hay libreria. DynCom quedo como ultima
-        // opcion para quien la pida a proposito.
-        for (u32 i = 0; i < num_cores; ++i) {
-            cpu_cores.push_back(std::make_shared<Recomp::ARM_Recomp>(
-                *this, *memory, i, timing->GetTimer(i)));
-        }
-        LOG_WARNING(Core, "CPU JIT requested, but Dynarmic not available on 32-bit ARM: "
-                          "using the AOT recomp backend (FastInterp without a recompiled "
-                          "library)");
-#else
-        for (u32 i = 0; i < num_cores; ++i) {
-            cpu_cores.push_back(
-                std::make_shared<ARM_DynCom>(*this, *memory, USER32MODE, i, timing->GetTimer(i)));
-        }
-        LOG_WARNING(Core, "CPU JIT requested, but Dynarmic not available");
-#endif
-#endif
-#ifdef HAVE_FASTINTERP
-    } else if (Settings::values.use_fastinterp || Settings::values.use_recomp) {
-        for (u32 i = 0; i < num_cores; ++i) {
-            cpu_cores.push_back(
-                std::make_shared<Recomp::ARM_Recomp>(*this, *memory, i, timing->GetTimer(i)));
-        }
-#endif
     } else {
         for (u32 i = 0; i < num_cores; ++i) {
             cpu_cores.push_back(
                 std::make_shared<ARM_DynCom>(*this, *memory, USER32MODE, i, timing->GetTimer(i)));
         }
     }
+#else
+    // ARM32 no tiene dynarmic: el interruptor excluyente cpu_engine decide
+    // el motor (recomp AOT / FastInterp / DynCom) y gana a los ajustes
+    // historicos de use_cpu_jit / use_fastinterp, que solo existen para no
+    // romper configuraciones viejas.
+#ifdef HAVE_FASTINTERP
+    const std::string engine = Settings::values.cpu_engine.GetValue();
+    if (engine == "fastinterp") {
+        for (u32 i = 0; i < num_cores; ++i) {
+            cpu_cores.push_back(std::make_shared<FastInterp::ARM_FastInterp>(
+                *this, *memory, i, timing->GetTimer(i)));
+        }
+        LOG_INFO(Core, "Motor de CPU: interprete rapido (FastInterp)");
+    } else if (engine == "dyncom") {
+        for (u32 i = 0; i < num_cores; ++i) {
+            cpu_cores.push_back(
+                std::make_shared<ARM_DynCom>(*this, *memory, USER32MODE, i, timing->GetTimer(i)));
+        }
+        LOG_INFO(Core, "Motor de CPU: interprete de referencia (DynCom)");
+    } else {
+        // "recomp" (predeterminado): el backend recomp ejecuta el codigo que
+        // 3dsrecomp genero para este titulo a velocidad nativa y cae a
+        // FastInterp donde no hay cobertura ni libreria.
+        for (u32 i = 0; i < num_cores; ++i) {
+            cpu_cores.push_back(std::make_shared<Recomp::ARM_Recomp>(
+                *this, *memory, i, timing->GetTimer(i)));
+        }
+        LOG_INFO(Core, "Motor de CPU: recompilacion AOT (respaldo FastInterp)");
+    }
+#else
+    for (u32 i = 0; i < num_cores; ++i) {
+        cpu_cores.push_back(
+            std::make_shared<ARM_DynCom>(*this, *memory, USER32MODE, i, timing->GetTimer(i)));
+    }
+    LOG_WARNING(Core, "CPU JIT requested, but Dynarmic not available");
+#endif
+#endif
     running_core = cpu_cores[0].get();
 
     kernel->SetCPUs(cpu_cores);

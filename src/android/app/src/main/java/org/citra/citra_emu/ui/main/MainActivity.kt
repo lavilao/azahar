@@ -104,11 +104,9 @@ class MainActivity :
         ThemeUtil.themeChangeListener(this)
         ThemeUtil.setTheme(this)
         super.onCreate(savedInstanceState)
-        try {
-            NativeLibrary.initMultiplayer()
-        } catch (ex: UnsatisfiedLinkError) {
-            android.util.Log.e("MainActivity", "initMultiplayer fallo", ex)
-        }
+        // initMultiplayer se aplazo a EmulationActivity: crear objetos de red
+        // (y tirar del stack de red/multijugador) al abrir la app solo
+        // alarga el arranque; se inicializa al lanzar un juego
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)

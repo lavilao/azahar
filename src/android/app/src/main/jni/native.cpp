@@ -1282,6 +1282,13 @@ void Java_org_citra_citra_1emu_NativeLibrary_setRecompLibrary(JNIEnv* env,
     }
 }
 
+// motor de CPU configurado ahora mismo, para que la interfaz pueda avisar
+// de lo que va a ejecutar el juego ("recomp", "fastinterp" o "dyncom")
+jstring Java_org_citra_citra_1emu_NativeLibrary_getCurrentCpuEngine(JNIEnv* env,
+                                                                    jobject obj) {
+    return ToJString(env, Settings::values.cpu_engine.GetValue());
+}
+
 jboolean Java_org_citra_citra_1emu_NativeLibrary_recompLibraryLoaded(
     [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jobject obj) {
     return Core::Recomp::ARM_Recomp::RecompActive();

@@ -128,6 +128,11 @@ object NativeLibrary {
 
     external fun reloadSettings()
 
+    /**
+     * Motor de CPU configurado ahora mismo ("recomp", "fastinterp" o "dyncom").
+     */
+    external fun getCurrentCpuEngine(): String
+
     external fun getTitleId(filename: String): Long
 
     external fun getIsSystemTitle(path: String): Boolean

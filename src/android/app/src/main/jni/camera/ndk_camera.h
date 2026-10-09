@@ -7,7 +7,7 @@
 #include <memory>
 #include <string_view>
 #include <unordered_map>
-#include <camera/NdkCameraManager.h>
+#include "jni/camera/lazy_ndk.h"
 #include "common/common_types.h"
 #include "core/frontend/camera/factory.h"
 #include "core/frontend/camera/interface.h"

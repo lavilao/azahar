@@ -12,6 +12,8 @@ object SettingKeys {
     external fun use_artic_base_controller(): String
     external fun use_cpu_jit(): String
     external fun use_fastinterp(): String
+    external fun use_recomp(): String
+    external fun cpu_engine(): String
     external fun cpu_clock_percentage(): String
     external fun is_new_3ds(): String
     external fun lle_applets(): String

@@ -23,6 +23,15 @@ import org.citra.citra_emu.model.Game
 object RecompLibraryHelper {
     private const val TAG = "RecompLibraryHelper"
 
+    /** ¿hay libreria recompilada para este titulo? (solo consulta) */
+    fun hasLibrary(game: Game): Boolean {
+        val name = "%016X.so".format(game.titleId)
+        val appContext = CitraApplication.appContext
+        val dest = File(File(appContext.filesDir, "recomp"), name)
+        val source = File(File(NativeLibrary.getUserDirectory(), "recomp"), name)
+        return dest.isFile || source.isFile
+    }
+
     /** Copia (si hace falta) la libreria del titulo y se la pasa al nucleo. */
     fun prepare(game: Game) {
         val name = "%016X.so".format(game.titleId)

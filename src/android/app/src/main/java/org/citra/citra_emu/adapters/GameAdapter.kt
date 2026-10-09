@@ -25,6 +25,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.appcompat.app.AppCompatActivity
+import org.citra.citra_emu.utils.RecompLibraryHelper
 import androidx.core.content.edit
 import androidx.core.graphics.scale
 import androidx.core.net.toUri
@@ -126,6 +127,33 @@ class GameAdapter(
                 System.currentTimeMillis()
             )
             .apply()
+
+        // Motor recomp activo pero sin libreria para este juego: avisar una
+        // sola vez por titulo como se consigue (workflow de recompilacion) y
+        // que motor se usara en su lugar
+        val context = view.context
+        val prefs = PreferenceManager.getDefaultSharedPreferences(CitraApplication.appContext)
+        val engine = try {
+            NativeLibrary.getCurrentCpuEngine()
+        } catch (e: UnsatisfiedLinkError) {
+            "recomp"
+        }
+        val warnKey = "warned_recomp_${holder.game.titleId}"
+        if (engine == "recomp" && !prefs.getBoolean(warnKey, false) &&
+            !RecompLibraryHelper.hasLibrary(holder.game)
+        ) {
+            prefs.edit().putBoolean(warnKey, true).apply()
+            MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.recomp_missing_title)
+                .setMessage(R.string.recomp_missing_message)
+                .setPositiveButton(R.string.recomp_missing_continue) { _, _ ->
+                    val action = HomeNavigationDirections.actionGlobalEmulationActivity(holder.game)
+                    view.findNavController().navigate(action)
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+            return
+        }
 
         val action = HomeNavigationDirections.actionGlobalEmulationActivity(holder.game)
         view.findNavController().navigate(action)

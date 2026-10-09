@@ -275,8 +275,15 @@ val unzipVulkanValidationLayers = tasks.register<Copy>("unzipVulkanValidationLay
     into(downloadedJniLibsPath)
 }
 
-tasks.named("preBuild") {
-    dependsOn(unzipVulkanValidationLayers)
+// Las capas de validacion de Vulkan son herramienta de depuracion: NO se
+// empaquetan (17 MB de .so de depuracion en un APK de 27 MB, extraidos al
+// almacenamiento del telefono y en la ruta de busqueda del cargador de
+// Vulkan). Para depurar con ellas: ./gradlew assembleVanillaDebug
+// -PbundleValidationLayers=true
+if (project.hasProperty("bundleValidationLayers")) {
+    tasks.named("preBuild") {
+        dependsOn(unzipVulkanValidationLayers)
+    }
 }
 
 ktlint {

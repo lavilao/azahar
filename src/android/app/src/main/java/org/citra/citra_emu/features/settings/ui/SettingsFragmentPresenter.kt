@@ -245,6 +245,23 @@ class SettingsFragmentPresenter(private val fragmentView: SettingsFragmentView) 
     private fun addGeneralSettings(sl: ArrayList<SettingsItem>) {
         settingsActivity.setToolbarTitle(settingsActivity.getString(R.string.preferences_general))
         sl.apply {
+            // Motor de CPU: interruptor excluyente (recomp / fastinterp / dyncom).
+            // En ARM32 no hay dynarmic, asi que este ajuste es el que decide que
+            // ejecuta el juego; los conmutadores historicos se retiraron de
+            // Depuracion para que no se puedan contradecir.
+            add(
+                StringSingleChoiceSetting(
+                    StringSetting.CPU_ENGINE,
+                    R.string.cpu_engine,
+                    R.string.cpu_engine_description,
+                    arrayOf(
+                        settingsActivity.getString(R.string.cpu_engine_recomp),
+                        settingsActivity.getString(R.string.cpu_engine_fastinterp),
+                        settingsActivity.getString(R.string.cpu_engine_dyncom)
+                    ),
+                    arrayOf("recomp", "fastinterp", "dyncom")
+                )
+            )
             add(
                 SwitchSetting(
                     BooleanSetting.USE_FRAME_LIMIT,
@@ -1901,24 +1918,6 @@ class SettingsFragmentPresenter(private val fragmentView: SettingsFragmentView) 
                     "%",
                     IntSetting.CPU_CLOCK_SPEED.key,
                     IntSetting.CPU_CLOCK_SPEED.defaultValue.toFloat()
-                )
-            )
-            add(
-                SwitchSetting(
-                    BooleanSetting.CPU_JIT,
-                    R.string.cpu_jit,
-                    R.string.cpu_jit_description,
-                    BooleanSetting.CPU_JIT.key,
-                    BooleanSetting.CPU_JIT.defaultValue
-                )
-            )
-            add(
-                SwitchSetting(
-                    BooleanSetting.USE_FASTINTERP,
-                    R.string.use_fastinterp,
-                    R.string.use_fastinterp_description,
-                    BooleanSetting.USE_FASTINTERP.key,
-                    BooleanSetting.USE_FASTINTERP.defaultValue
                 )
             )
             add(

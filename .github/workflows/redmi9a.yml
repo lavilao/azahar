@@ -25,6 +25,17 @@
 #  con el driver PowerVR, desde ese mismo menú vuelves a OpenGL ES).
 #
 #  REQUISITOS: minSdk del proyecto = 29 (Android 10) => justo lo del Redmi 9A.
+#
+#  MOTOR DE CPU (interruptor excluyente): Ajustes -> General -> "Motor de CPU"
+#  (recomp AOT / interprete rapido / interprete de referencia). Si el motor es
+#  recomp y el juego no tiene libreria, la app lo avisa al lanzarlo con el flujo
+#  completo (rom/ en el repo -> workflow "Recompilar juego" -> .so a recomp/).
+#
+#  DIAGNOSTICO DE CIERRES: si la app se cierra, el informe completo (hilo,
+#  registros, instruccion, biblioteca+0xoffset y mapeos) queda en
+#  Android/data/org.azahar_emu.azahar/files/azahar-crash.log. Este workflow
+#  ademas sube el .so SIN despoilar como artefacto "azahar-redmi9a-armv7-simbolos"
+#  para traducir esos offsets a funciones exactas con llvm-symbolizer.
 # =============================================================================
 name: Azahar Redmi 9A (32 bits)
 
@@ -128,12 +139,35 @@ jobs:
              "artifacts/azahar-android-${DATE}-${REV}-armeabi-v7a.apk"
           ls -lh artifacts/
 
+      # Simbolos SIN despoilar del .so nativo: los informes de cierres
+      # (azahar-crash.log) traen "biblioteca+0xoffset de archivo"; con este
+      # .so y llvm-symbolizer se traduce a funcion y linea exactas.
+      - name: Recopilar simbolos del .so nativo
+        run: |
+          mkdir -p symbols
+          UNSTRIPPED="$(find src/android/app/build/intermediates/cxx -name 'libcitra-android.so' -path '*obj/armeabi-v7a*' | head -1)"
+          if [ -n "$UNSTRIPPED" ]; then
+            cp "$UNSTRIPPED" symbols/
+            ls -lh symbols/
+          else
+            echo "::warning::no se encontró el .so sin despoilar; los informes de cierres no podrán simbolizarse"
+          fi
+
       - name: Subir artefacto
         uses: actions/upload-artifact@v7
         with:
           name: azahar-redmi9a-armv7
-          path: artifacts/*.apk
+          path: |
+            artifacts/*.apk
+            symbols/*.so
           if-no-files-found: error
+
+      - name: Subir simbolos como artefacto separado
+        uses: actions/upload-artifact@v7
+        with:
+          name: azahar-redmi9a-armv7-simbolos
+          path: symbols/*.so
+          if-no-files-found: warn
 
       - name: Publicar en Releases (solo tags)
         if: startsWith(github.ref, 'refs/tags/')

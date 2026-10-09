@@ -350,6 +350,16 @@ Se esperan fallos gráficos temporales cuando ésta esté activado.</string>
     <!-- Debug settings strings -->
     <string name="cpu_jit">CPU JIT</string>
     <string name="cpu_jit_description">Usa el compilador Just-In-Time (JIT) para la emulación de la CPU. Cuando se active, el rendimiento mejorará notablemente.</string>
+
+    <!-- Selector exclusivo de motor de CPU (ARM de 32 bits no tiene JIT) -->
+    <string name="cpu_engine">Motor de CPU</string>
+    <string name="cpu_engine_description">Selección exclusiva del motor de emulación de CPU. La recompilación AOT ejecuta el juego a velocidad casi nativa cuando existe su librería recompilada; sin ella cae al intérprete rápido. Cambiarlo reinicia la emulación.</string>
+    <string name="cpu_engine_recomp">Recompilación AOT (recomendado)</string>
+    <string name="cpu_engine_fastinterp">Intérprete rápido</string>
+    <string name="cpu_engine_dyncom">Intérprete de referencia (lento)</string>
+    <string name="recomp_missing_title">No hay librería recompilada para este juego</string>
+    <string name="recomp_missing_message">Este juego se ejecutará con el intérprete rápido (lento). Para ejecutarlo a velocidad casi nativa: pon la ROM descifrada en la carpeta rom/ del proyecto de GitHub y lanza el workflow "Recompilar juego para Redmi 9A"; después copia el .so resultante a la carpeta recomp/ del almacenamiento de la app. La app lo usará automáticamente en el siguiente arranque.</string>
+    <string name="recomp_missing_continue">Continuar igualmente</string>
     <string name="hw_shaders">Activar Sombreador de Hardware</string>
     <string name="hw_shaders_description">Usa el hardware para emular los sombreadores de 3DS. Cuando se active, el rendimiento mejorará notablemente.</string>
     <string name="cpu_clock_speed">Velocidad de reloj de la CPU</string>

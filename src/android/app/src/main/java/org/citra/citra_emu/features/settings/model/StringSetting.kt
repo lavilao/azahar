@@ -27,7 +27,8 @@ enum class StringSetting(
         "_back"
     ),
     WEB_API_URL(SettingKeys.web_api_url(), Settings.SECTION_NETWORK, ""),
-    NETWORK_TOKEN(SettingKeys.network_token(), Settings.SECTION_NETWORK, "");
+    NETWORK_TOKEN(SettingKeys.network_token(), Settings.SECTION_NETWORK, ""),
+    CPU_ENGINE(SettingKeys.cpu_engine(), Settings.SECTION_CORE, "recomp");
 
     override var string: String = defaultValue
 

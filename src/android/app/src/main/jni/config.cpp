@@ -137,6 +137,7 @@ void Config::ReadValues() {
     ReadSetting("Core", Settings::values.use_cpu_jit);
     ReadSetting("Core", Settings::values.use_fastinterp);
     ReadSetting("Core", Settings::values.use_recomp);
+    ReadSetting("Core", Settings::values.cpu_engine);
     ReadSetting("Core", Settings::values.cpu_clock_percentage);
 
     // Renderer

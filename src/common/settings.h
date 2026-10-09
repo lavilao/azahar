@@ -488,6 +488,9 @@ struct Values {
     // ejecutar el codigo recompilado AOT (3dsrecomp) del titulo cuando haya
     // libreria disponible: el resto pasa por el interprete de respaldo
     Setting<bool> use_recomp{true, Keys::use_recomp};
+    // motor de CPU exclusivo: "recomp" (AOT con respaldo FastInterp),
+    // "fastinterp" (interprete rapido) o "dyncom" (interprete de referencia)
+    Setting<std::string> cpu_engine{"recomp", Keys::cpu_engine};
     SwitchableSetting<s32, true> cpu_clock_percentage{100, 5, 400, Keys::cpu_clock_percentage};
     SwitchableSetting<bool> is_new_3ds{true, Keys::is_new_3ds};
     SwitchableSetting<bool> lle_applets{true, Keys::lle_applets};

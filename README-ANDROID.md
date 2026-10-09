@@ -107,3 +107,4 @@ ANDROID_NDK=/ruta/al/ndk ANDROID_SDK=/ruta/al/sdk ./android/build_apk.sh
 
 O deja que GitHub Actions lo construya: el workflow `.github/workflows/
 android.yml` del repo produce el APK como artefacto.
+# trigger

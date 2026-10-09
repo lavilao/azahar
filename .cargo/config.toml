@@ -1,0 +1,7 @@
+# cross compiling for the Redmi 9A, an armeabi-v7a phone with Android 10
+# (API 29). the NDK's compiler wrappers are expected on the PATH, which the
+# build scripts and the workflow set up. this target has NEON on by default,
+# which the Cortex-A53 and every other armv7 phone has, and keeps the same
+# softfp calling convention the NDK's libraries use.
+[target.thumbv7neon-linux-androideabi]
+linker = "armv7a-linux-androideabi29-clang"

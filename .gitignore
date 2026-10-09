@@ -1,0 +1,11 @@
+/target
+*.log
+/roms
+/dump
+/user/
+/sysdata/
+
+# android build
+android/keystore.jks
+android/app/build/
+android/zakuro-redmi9a.apk

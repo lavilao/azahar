@@ -33,12 +33,27 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
       - name: Android SDK (NDK 27.0.12077973, platform 35)
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager --install "ndk;27.0.12077973" "platforms;android-35" "build-tools;35.0.0" >/dev/null
+          SDK=/usr/local/lib/android/sdk
+          if [ ! -d "$SDK" ]; then
+            SDK="$HOME/android-sdk"
+            mkdir -p "$SDK"
+          fi
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          SDKM=$(ls "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | sort -V | tail -1)
+          if [ -z "$SDKM" ]; then
+            curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/ct.zip
+            mkdir -p "$SDK/cmdline-tools-tmp"
+            unzip -q /tmp/ct.zip -d "$SDK/cmdline-tools-tmp"
+            mkdir -p "$SDK/cmdline-tools"
+            mv "$SDK/cmdline-tools-tmp/cmdline-tools" "$SDK/cmdline-tools/latest"
+            SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          echo "sdkmanager: $SDKM"
+          yes | "$SDKM" --licenses >/dev/null || true
+          "$SDKM" --install "ndk;27.0.12077973" "platforms;android-35" "build-tools;35.0.0" >/dev/null
 
       - name: Tools (ninja)
         run: |

@@ -1,0 +1,62 @@
+name: 4u-native arm32 apk
+
+# Stopgap: builds khorne-hub/4u-native (pinned upstream commit) plus the ARM32 port patch
+# carried on this branch, both ABIs, until lavilao/4u-native is writable with a proper token.
+# armeabi-v7a is the target (32-bit phones, e.g. Redmi 9A); arm64-v8a is the control build.
+
+on:
+  push:
+    branches: [4u-native-arm32]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a]
+    env:
+      ANDROID_ABI: ${{ matrix.abi }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 4u-native (upstream 86de7e1 + the arm32 patch)
+        run: |
+          git clone --quiet https://github.com/khorne-hub/4u-native.git 4u-native
+          git -C 4u-native checkout --quiet 86de7e194d19676daaca743cf5055d10ee2264fe
+          git -C 4u-native apply --check "$GITHUB_WORKSPACE/4u-native-arm32.patch"
+          git -C 4u-native apply "$GITHUB_WORKSPACE/4u-native-arm32.patch"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK (NDK 27.0.12077973, platform 35)
+        run: |
+          sdkmanager --install "ndk;27.0.12077973" "platforms;android-35" "build-tools;35.0.0" >/dev/null
+
+      - name: Tools (ninja)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build
+
+      - name: SDL3 (${{ matrix.abi }})
+        run: sh scripts/build_sdl3.sh
+        working-directory: 4u-native
+
+      - name: APK (${{ matrix.abi }})
+        run: sh scripts/build_apk.sh
+        working-directory: 4u-native
+
+      - name: Checksums
+        run: |
+          cd 4u-native/android/app/build/outputs/apk
+          find . -name '*.apk' -print -exec sha256sum {} \;
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mh4u-native-${{ matrix.abi }}
+          path: 4u-native/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error

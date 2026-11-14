@@ -1,0 +1,701 @@
+diff --git a/.github/workflows/android.yml b/.github/workflows/android.yml
+new file mode 100644
+index 0000000..528b3de
+--- /dev/null
++++ b/.github/workflows/android.yml
+@@ -0,0 +1,48 @@
++name: android apk
++
++# The app's APKs for both ABIs. The game's code library is never built here (it is made from the
++# player's own game, on their PC or phone), so these APKs are ready to install; the player then
++# builds the library from their copy of the game (on the phone: Build on this phone; or on a PC with
++# --32bit for the armeabi-v7a APK).
++
++on:
++  push:
++  workflow_dispatch:
++
++jobs:
++  apk:
++    runs-on: ubuntu-latest
++    strategy:
++      fail-fast: false
++      matrix:
++        abi: [arm64-v8a, armeabi-v7a]
++    env:
++      ANDROID_ABI: ${{ matrix.abi }}
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: actions/setup-java@v4
++        with:
++          distribution: temurin
++          java-version: '17'
++
++      - name: Android SDK (NDK 27.0.12077973, platform 35)
++        run: |
++          sdkmanager --install "ndk;27.0.12077973" "platforms;android-35" "build-tools;35.0.0" >/dev/null
++
++      - name: Tools (ninja)
++        run: |
++          sudo apt-get update -qq
++          sudo apt-get install -y -qq ninja-build
++
++      - name: SDL3 (${{ matrix.abi }})
++        run: sh scripts/build_sdl3.sh
++
++      - name: APK (${{ matrix.abi }})
++        run: sh scripts/build_apk.sh
++
++      - uses: actions/upload-artifact@v4
++        with:
++          name: mh4u-native-${{ matrix.abi }}
++          path: android/app/build/outputs/apk/**/*.apk
++          if-no-files-found: error
+diff --git a/ARM32.md b/ARM32.md
+new file mode 100644
+index 0000000..1d18758
+--- /dev/null
++++ b/ARM32.md
+@@ -0,0 +1,54 @@
++# The 32-bit app (armeabi-v7a)
++
++4u-native is arm64-only upstream. This branch adds a second app, built for `armeabi-v7a`: the same
++game, the same recompiled-C approach, on 32-bit phones (a Helio G25 / Redmi 9A class device).
++
++## What it changes
++
++- **The guest's C is 32-bit everywhere** (the 3DS is a 32-bit machine): the recompiler's output was
++  already portable C, so the library just compiles for `armv7a-linux-androideabi29` (`--32bit`, or
++  nothing at all on a 32-bit phone: the on-phone builder picks it from `uname`).
++- **The guest memory's reservation**: a 64-bit host reserves 4 GiB flat; a 32-bit process cannot.
++  The 32-bit build reserves the kernel's managed window only (`kManagedEnd`, 1 GiB — everything an
++  app can have mapped: FCRAM, linear heaps, VRAM, DSP RAM are all below it) plus a guard. The app
++  reserves the hole before SDL and the GPU driver map theirs (`ReserveEarlyGuestSpace`, the first
++  `Reserve()` takes it), so it succeeds even on a full 32-bit address space.
++- **Fibers**: `port/src/fiber_arm32.S` switches them (AAPCS callee-saved: r4-r11, sp, lr, d8-d15),
++  next to `fiber_arm64.S`; the same first-entry contract (r0 = the context's arg).
++- **The player's own GPU driver path** (libadrenotools, Adreno-only upstream anyway) is compiled
++  out of the 32-bit app: the system's driver is used. Everything else of the Vulkan renderer is
++  ABI-independent.
++- **The app's checks** (the game library's ELF class and machine, the crash screen's pc/lr) follow
++  the app's own ABI.
++
++## Building
++
++The APK, per ABI:
++
++```sh
++ANDROID_ABI=arm64-v8a  sh scripts/build_sdl3.sh
++ANDROID_ABI=armeabi-v7a sh scripts/build_sdl3.sh
++sh scripts/build_apk.sh                    # arm64-v8a
++ANDROID_ABI=armeabi-v7a sh scripts/build_apk.sh
++```
++
++GitHub Actions builds both APKs on every push (`.github/workflows/android.yml`).
++
++The game's code library for the 32-bit app, on a PC:
++
++```sh
++python3 tools/build_game.py --dump YOUR_UPDATE.cia [YOUR_GAME.3ds] --native --android --32bit
++```
++
++and on the phone it just picks `--32bit` on its own. The library is a 32-bit ELF, and the 32-bit
++app refuses a 64-bit one (and the other way around), so the pair cannot be mixed up.
++
++## Trying it on a 32-bit phone
++
++1. Install the `armeabi-v7a` APK (it cannot replace an installed arm64 one: Android asks to
++   uninstall first, which deletes saves — export them first).
++2. The game folder screen is the same; build the library **on this phone**, or copy one made on a
++   PC with `--32bit`.
++3. If the Vulkan device negotiation fails (the first frame's log says so), the knobs exist:
++   `MH4N_RHI_MASK` (e.g. `timeline`, `interlock`), `MH4N_NO_SHARED_IMAGES=1`, and the log line
++   `rhi: caps ...` lists what the device answered.
+diff --git a/android/app/build.gradle b/android/app/build.gradle
+index e852ebe..fdcb28e 100644
+--- a/android/app/build.gradle
++++ b/android/app/build.gradle
+@@ -19,7 +19,7 @@ android {
+         versionCode 14
+         versionName "1.0"
+         ndk {
+-            abiFilters 'arm64-v8a'
++            abiFilters 'arm64-v8a', 'armeabi-v7a'
+         }
+     }
+     signingConfigs {
+diff --git a/app_native/CMakeLists.txt b/app_native/CMakeLists.txt
+index 3079f27..944c9e8 100644
+--- a/app_native/CMakeLists.txt
++++ b/app_native/CMakeLists.txt
+@@ -30,12 +30,15 @@ target_link_libraries(main PRIVATE EGL GLESv2 nativewindow)
+ # A player's own GPU driver for an Adreno (gpu_driver.cpp): libadrenotools, BSD-2-Clause, commit 8fae8ce of
+ # github.com/bylaws/libadrenotools with its linkernsbypass at aa39758, the copy the MHGU port vendors. Its hook
+ # libraries (hook_impl, main_hook, file_redirect_hook, gsl_alloc_hook) go into the APK beside libmain.so
+-# (scripts/build_app.sh): they are opened from the app's nativeLibraryDir.
+-add_subdirectory(third_party/libadrenotools adrenotools)
+-target_link_libraries(main PRIVATE adrenotools)
+-foreach(hook hook_impl main_hook file_redirect_hook gsl_alloc_hook)
+-  target_link_options(${hook} PRIVATE -Wl,-z,max-page-size=16384)
+-endforeach()
++# (scripts/build_apk.sh): they are opened from the app's nativeLibraryDir. The hooks are AArch64-only:
++# the 32-bit app (armeabi-v7a) runs with the system's driver, and gpu_driver.cpp's own part is compiled out.
++if(ANDROID_ABI STREQUAL "arm64-v8a")
++  add_subdirectory(third_party/libadrenotools adrenotools)
++  target_link_libraries(main PRIVATE adrenotools)
++  foreach(hook hook_impl main_hook file_redirect_hook gsl_alloc_hook)
++    target_link_options(${hook} PRIVATE -Wl,-z,max-page-size=16384)
++  endforeach()
++endif()
+ # every registration of the runtime's modules has to survive (they are linked whole by mh4n::all);
+ # 16 KB pages for Android 15 devices
+ target_link_options(main PRIVATE -Wl,-z,max-page-size=16384 -Wl,--exclude-libs,ALL)
+diff --git a/app_native/android_main.cpp b/app_native/android_main.cpp
+index 0bc4ab2..bbe5113 100644
+--- a/app_native/android_main.cpp
++++ b/app_native/android_main.cpp
+@@ -66,6 +66,7 @@
+ #include "mh4n/host.h"
+ #include "mh4n/host_thread_name.h"
+ #include "mh4n/log.h"
++#include "mh4n/memory.h"
+ #include "mh4n/options.h"
+ #include "mh4n/pacing_trace.h"
+ #include "mh4n/present.h"
+@@ -418,6 +419,9 @@ Layout ComputeLayout(int w, int h, u32 top_w, u32 top_h, u32 bot_w, u32 bot_h, b
+ int main(int argc, char* argv[]) {
+     (void)argc;
+     (void)argv;
++    // The hole for the guest's address space, before SDL and the GPU driver's libraries map theirs
++    // (a 32-bit host can no longer find it afterwards; nothing happens on a 64-bit one)
++    mh4n::host::ReserveEarlyGuestSpace();
+     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_SENSOR)) {  // (sensors: the gyro's aim)
+diff --git a/app_native/crash_screen.cpp b/app_native/crash_screen.cpp
+index 2aedbf5..8550efe 100644
+--- a/app_native/crash_screen.cpp
++++ b/app_native/crash_screen.cpp
+@@ -129,6 +129,12 @@ void OnSignal(int sig, siginfo_t* info, void* context) {
+             PutAddress("pc", static_cast<uintptr_t>(uc->uc_mcontext.pc));
+             PutAddress("lr", static_cast<uintptr_t>(uc->uc_mcontext.regs[30]));
+         }
++#elif defined(__arm__)
++        if (context != nullptr) {
++            const auto* uc = static_cast<const ucontext_t*>(context);
++            PutAddress("pc", static_cast<uintptr_t>(uc->uc_mcontext.arm_pc));
++            PutAddress("lr", static_cast<uintptr_t>(uc->uc_mcontext.arm_lr));
++        }
+ #endif
+         Backtrace bt;
+         _Unwind_Backtrace(Step, &bt);
+diff --git a/app_native/gpu_driver.cpp b/app_native/gpu_driver.cpp
+index dbd5a41..38a53ed 100644
+--- a/app_native/gpu_driver.cpp
++++ b/app_native/gpu_driver.cpp
+@@ -21,7 +21,11 @@
+ #include <mutex>
+ #include <thread>
+ 
++// libadrenotools' hooks are AArch64-only: a 32-bit build runs with the system's driver (a player's
++// own driver needs the arm64 app)
++#if defined(__aarch64__)
+ #include "adrenotools/driver.h"
++#endif
+ #include "crash_screen.h"
+ #include "app_jni.h"
+ #include "gpu/backend/driver_hooks.h"
+@@ -125,6 +129,11 @@ std::string HookDir() {
+ PFN_vkGetInstanceProcAddr Loader() {
+     if (g_try_folder.empty() || g_opened) return g_gipa;
+     g_opened = true;
++#if !defined(__aarch64__)
++    WriteText(Path("trial"), g_try_folder + "\n");
++    GiveUp("a player's own GPU driver needs the arm64 build");
++    return nullptr;
++#else
+     const std::string dir = Path(g_try_folder) + "/", hooks = HookDir();
+     WriteText(Path("trial"), g_try_folder + "\n");  // (removed once it has drawn: Watch)
+     void* lib = adrenotools_open_libvulkan(RTLD_NOW, ADRENOTOOLS_DRIVER_CUSTOM, nullptr, hooks.c_str(), dir.c_str(),
+@@ -141,6 +150,7 @@ PFN_vkGetInstanceProcAddr Loader() {
+     }
+     Log("%s (%s) opened through libadrenotools, hooks in %s", g_try_name.c_str(), g_try_library.c_str(), hooks.c_str());
+     return g_gipa;
++#endif
+ }
+ 
+ void Failed(const std::string& why) {
+diff --git a/app_native/verify_files.cpp b/app_native/verify_files.cpp
+index 1587473..4a492fe 100644
+--- a/app_native/verify_files.cpp
++++ b/app_native/verify_files.cpp
+@@ -1090,12 +1090,19 @@ void run() {
+             const std::string name = base_name(library);
+             uint8_t h[20] = {};
+             File lf;
++            // The library must be an ELF of the app's own ABI: class 2 with EM_AARCH64 (183) on
++            // the arm64 app, class 1 with EM_ARM (40) on the ARMv7 app
++#if defined(__aarch64__)
+             bool elf = lf.open(library) && lf.read_exact(0, h, 20) && !memcmp(h, "\x7f" "ELF", 4) && h[4] == 2 && h[18] == 183;
++#else
++            bool elf = lf.open(library) && lf.read_exact(0, h, 20) && !memcmp(h, "\x7f" "ELF", 4) && h[4] == 1 && h[18] == 40;
++#endif
+             lf.close();
+             const std::string beside = first_line(library.substr(0, library.size() - 3) + ".id"), inside = elf ? id_inside(library) : "";
+             const std::string have = inside.empty() ? beside : inside;
+             if (!elf) {
+-                r.problem(F("%s is not an Android (arm64) library.", name.c_str()), F("%s no es una librería para Android (arm64).", name.c_str()));
++                r.problem(F("%s is not a library for this phone's CPU (ARM).", name.c_str()),
++                          F("%s no es una librería para el procesador de este teléfono (ARM).", name.c_str()));
+                 todo_library(r);
+             } else if (!inside.empty() && !beside.empty() && inside != beside) {
+                 r.problem(F("%s and the .id beside it come from different builds (copied from two places). Don't use a library someone else made.", name.c_str()),
+diff --git a/mh4n/native/include/mh4n/memory.h b/mh4n/native/include/mh4n/memory.h
+index 7e7a8bd..4356a50 100644
+--- a/mh4n/native/include/mh4n/memory.h
++++ b/mh4n/native/include/mh4n/memory.h
+@@ -48,10 +48,26 @@ namespace mh4n {
+ 
+ inline constexpr u32 kPageSize = 0x1000;       // the guest's page
+ inline constexpr u32 kPageMask = kPageSize - 1;
+-inline constexpr u64 kAddressSpaceSize = 1ull << 32;
+-inline constexpr u64 kGuardSize = 0x10000;     // inaccessible host address space after the 4 GiB
+ // The kernel manages [0, 0x40000000) (Azahar's VMManager::MAX_ADDRESS, the New 3DS limit).
+ inline constexpr u32 kManagedEnd = 0x40000000;
++#if defined(__LP64__) || defined(_WIN64)
++inline constexpr u64 kAddressSpaceSize = 1ull << 32;
++inline constexpr u64 kGuardSize = 0x10000;     // inaccessible host address space after the 4 GiB
++#else
++// A 32-bit host process cannot hold 4 GiB of address space: the reservation is the managed window
++// only (everything an app can have mapped: FCRAM, linear heaps, VRAM, DSP RAM are all below
++// kManagedEnd) and a guard after it. A guest pointer past the managed window then faults in the
++// guard, as it faults past 4 GiB on a 64-bit host.
++inline constexpr u64 kAddressSpaceSize = kManagedEnd;
++inline constexpr u64 kGuardSize = 0x10000;
++#endif
++
++// On a 32-bit host the guest's address space can no longer be found once SDL and the GPU driver
++// have mapped their libraries: the app calls this before anything large maps, and the memory
++// module's first Reserve() takes the hole. Nothing happens on a 64-bit host.
++namespace host {
++void ReserveEarlyGuestSpace();
++}
+ 
+ inline constexpr u32 kProcessImageVaddr = 0x00100000;
+ inline constexpr u32 kHeapVaddr = 0x08000000;
+diff --git a/mh4n/native/src/cpu/CMakeLists.txt b/mh4n/native/src/cpu/CMakeLists.txt
+index 7b6c3cf..b26fb2a 100644
+--- a/mh4n/native/src/cpu/CMakeLists.txt
++++ b/mh4n/native/src/cpu/CMakeLists.txt
+@@ -10,10 +10,15 @@ set(MH4N_RECOMP_RUNTIME "${MH4N_REPO_ROOT}/tools/recomp/runtime")
+ # module; cpu_test.cpp then has nothing to test.
+ if (EXISTS "${MH4N_FIBER_SOURCE}" AND EXISTS "${MH4N_RECOMP_RUNTIME}/recomp.h")
+     set(mh4n_cpu_sources code_host.cpp code_library.cpp "${MH4N_FIBER_SOURCE}")
+-    # Android: bionic has no getcontext/swapcontext; fiber.cpp switches with this AArch64 routine
++    # Android: bionic has no getcontext/swapcontext; fiber.cpp switches with this AArch64 routine,
++    # or the ARMv7 one on the 32-bit app (armeabi-v7a)
+     if (ANDROID)
+         enable_language(ASM)
+-        list(APPEND mh4n_cpu_sources "${MH4N_REPO_ROOT}/port/src/fiber_arm64.S")
++        if (ANDROID_ABI STREQUAL "armeabi-v7a")
++            list(APPEND mh4n_cpu_sources "${MH4N_REPO_ROOT}/port/src/fiber_arm32.S")
++        else()
++            list(APPEND mh4n_cpu_sources "${MH4N_REPO_ROOT}/port/src/fiber_arm64.S")
++        endif()
+     endif()
+ else()
+     message(STATUS "mh4n_cpu: fiber.cpp or recomp.h not found around native/: an empty module")
+diff --git a/mh4n/native/src/memory/host_posix.cpp b/mh4n/native/src/memory/host_posix.cpp
+index bf29baa..abf0231 100644
+--- a/mh4n/native/src/memory/host_posix.cpp
++++ b/mh4n/native/src/memory/host_posix.cpp
+@@ -17,6 +17,7 @@
+ #endif
+ 
+ #include "host.h"
++#include "mh4n/memory.h"
+ 
+ namespace mh4n::host {
+ namespace {
+@@ -88,7 +89,35 @@ std::size_t PageSize() {
+     return static_cast<std::size_t>(sysconf(_SC_PAGESIZE));
+ }
+ 
++// A region reserved before the process grew (ReserveEarlyGuestSpace, which the app calls before
++// anything large maps): Reserve() consumes it once, so the guest's address space keeps a hole of
++// its own on a 32-bit host.
++void* g_early_base = nullptr;
++std::size_t g_early_size = 0;
++
++void ReserveEarlyGuestSpace() {
++#if !defined(__aarch64__)
++    // A 32-bit host's address space fills up: the hole must be reserved before SDL and the GPU
++    // driver's libraries have mapped. Nothing to do on a 64-bit host.
++    if (g_early_base != nullptr) {
++        return;
++    }
++    const std::size_t size = static_cast<std::size_t>(kAddressSpaceSize + kGuardSize);
++    void* p = mmap(nullptr, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
++    if (p != MAP_FAILED) {
++        g_early_base = p;
++        g_early_size = size;
++    }
++#endif
++}
++
+ void* Reserve(std::size_t size) {
++    if (g_early_base != nullptr && size <= g_early_size) {
++        void* p = g_early_base;
++        g_early_base = nullptr;
++        g_early_size = 0;
++        return p;
++    }
+     void* p = mmap(nullptr, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+     return p == MAP_FAILED ? nullptr : p;
+ }
+diff --git a/mh4n/native/src/memory/host_win32.cpp b/mh4n/native/src/memory/host_win32.cpp
+index 7ebb41e..ed68e8d 100644
+--- a/mh4n/native/src/memory/host_win32.cpp
++++ b/mh4n/native/src/memory/host_win32.cpp
+@@ -34,6 +34,11 @@ std::size_t PageSize() {
+     return info.dwPageSize;
+ }
+ 
++void ReserveEarlyGuestSpace() {
++    // (the app's early hole for the guest's address space: a 32-bit Windows host would want one
++    // too, but the Windows builds are 64-bit)
++}
++
+ void* Reserve(std::size_t size) {
+     return VirtualAlloc(nullptr, size, MEM_RESERVE, PAGE_NOACCESS);
+ }
+diff --git a/mh4n/port/src/fiber.cpp b/mh4n/port/src/fiber.cpp
+index 58e9fde..1bcd658 100644
+--- a/mh4n/port/src/fiber.cpp
++++ b/mh4n/port/src/fiber.cpp
+@@ -73,12 +73,9 @@ void Fiber::SwitchTo(Fiber& next) {
+ 
+ #elif defined(__ANDROID__)
+ 
+-// Android's bionic has <ucontext.h> but no getcontext/makecontext/swapcontext, so the
+-// context switch is the small AArch64 routine in fiber_arm64.S. Android builds here are
+-// arm64-v8a only (see android/app/build.gradle.kts).
+-#if !defined(__aarch64__)
+-#error "the MH4U port's Android fibers are AArch64-only"
+-#endif
++// Android's bionic has <ucontext.h> but no getcontext/makecontext/swapcontext, so the context
++// switch is the small routine in fiber_arm64.S (AArch64) or fiber_arm32.S (ARMv7, the 32-bit
++// app: armeabi-v7a).
+ 
+ #ifndef MAP_NORESERVE
+ #define MAP_NORESERVE 0
+@@ -86,6 +83,8 @@ void Fiber::SwitchTo(Fiber& next) {
+ 
+ namespace {
+ 
++#if defined(__aarch64__)
++
+ struct Arm64Context {
+     std::uint64_t x19, x20, x21, x22, x23, x24, x25, x26, x27, x28, x29, x30;
+     std::uint64_t sp;
+@@ -100,10 +99,34 @@ static_assert(sizeof(Arm64Context) == 176);
+ 
+ extern "C" void mh4u_fiber_switch(Arm64Context* from, Arm64Context* to);
+ 
++using FiberContext = Arm64Context;
++
++#else
++
++// ARMv7: AAPCS callee-saved r4-r11, sp, lr, and the VFP d8-d15 (fiber_arm32.S switches).
++struct Arm32Context {
++    std::uint32_t r4, r5, r6, r7, r8, r9, r10, r11;
++    std::uint32_t lr;
++    std::uint32_t sp;
++    std::uint64_t d8, d9, d10, d11, d12, d13, d14, d15;
++    std::uint32_t arg; // r0 when the context is first entered
++};
++
++static_assert(offsetof(Arm32Context, sp) == 36);
++static_assert(offsetof(Arm32Context, d8) == 40);
++static_assert(offsetof(Arm32Context, arg) == 104);
++static_assert(sizeof(Arm32Context) == 112);
++
++extern "C" void mh4u_fiber_switch(Arm32Context* from, Arm32Context* to);
++
++using FiberContext = Arm32Context;
++
++#endif
++
+ } // namespace
+ 
+ struct Fiber::Impl {
+-    Arm64Context context{};
++    FiberContext context{};
+     void* stack = nullptr;
+     std::size_t stack_size = 0; // including the guard page
+     std::function<void()> entry;
+@@ -137,10 +160,17 @@ std::unique_ptr<Fiber> Fiber::Create(std::function<void()> entry, std::size_t st
+     auto* top = static_cast<std::uint8_t*>(impl->stack) + impl->stack_size;
+     top = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uintptr_t>(top) &
+                                           ~std::uintptr_t{15});
++#if defined(__aarch64__)
+     impl->context.sp = reinterpret_cast<std::uint64_t>(top);
+     impl->context.x29 = 0; // frame pointer chain ends here
+     impl->context.x30 = reinterpret_cast<std::uint64_t>(&mh4u_fiber_entry);
+     impl->context.arg = reinterpret_cast<std::uint64_t>(impl.get());
++#else
++    impl->context.sp = static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(top));
++    // r11 (the frame pointer) ends here by the zero initialisation
++    impl->context.lr = reinterpret_cast<std::uint32_t>(&mh4u_fiber_entry);
++    impl->context.arg = reinterpret_cast<std::uint32_t>(impl.get());
++#endif
+     return std::unique_ptr<Fiber>(new Fiber(std::move(impl)));
+ }
+ 
+diff --git a/mh4n/port/src/fiber_arm32.S b/mh4n/port/src/fiber_arm32.S
+new file mode 100644
+index 0000000..ebafae6
+--- /dev/null
++++ b/mh4n/port/src/fiber_arm32.S
+@@ -0,0 +1,30 @@
++// ARMv7 (armeabi-v7a) fiber context switch for Android. Bionic has no ucontext routines, so this
++// saves and restores the callee-saved registers (AAPCS r4-r11, sp, lr, and the VFP d8-d15) and
++// returns into the other context. The layout must match Arm32Context in fiber.cpp; the
++// static_asserts there check the offsets.
++//
++//   void mh4u_fiber_switch(Arm32Context* from, Arm32Context* to);
++
++    .syntax unified
++    .text
++    .p2align 2
++    .globl mh4u_fiber_switch
++    .hidden mh4u_fiber_switch
++    .type mh4u_fiber_switch, %function
++mh4u_fiber_switch:
++    // r0 = from, r1 = to; r2 is scratch (caller-saved, dead per the ABI once SwitchTo returns)
++    stm r0, {r4-r11, lr}          // 0..31 r4-r11, 32 lr
++    str sp, [r0, #36]
++    add r2, r0, #40
++    vstm r2, {d8-d15}             // 40..103, eight full callee-saved VFP doubles
++
++    ldm r1, {r4-r11, lr}
++    ldr sp, [r1, #36]
++    add r2, r1, #40
++    vldm r2, {d8-d15}
++    ldr r0, [r1, #104]            // arg: r0 when the context is first entered; r0 is
++                                  // caller-saved, so loading it on every switch is safe
++    bx lr
++    .size mh4u_fiber_switch, .-mh4u_fiber_switch
++
++    .section .note.GNU-stack,"",%progbits
+diff --git a/mh4n/tools/build_game.py b/mh4n/tools/build_game.py
+index 5bfbd3c..4ea3e3a 100644
+--- a/mh4n/tools/build_game.py
++++ b/mh4n/tools/build_game.py
+@@ -355,6 +355,8 @@ def mod_folders(args, program_id: int) -> list[str]:
+ def compile_library(args, out: str, program_id: int, modes: list[str]) -> tuple[str, str]:
+     """The library from the recompiled C in out/src (an object is compiled again only when its C is newer:
+     recomp/build.py), with its id beside it for the native app; returns (its path, its name)."""
++    if args.android and (args.bit32 or (args.bit32 is None and rbuild.android_wants_32bit())):
++        rbuild.set_android_32bit()
+     toolchain_dir = os.path.join(args.out, "toolchain")
+     if args.fetch_compiler and not args.cc and sys.platform.startswith("win"):
+         cc = fetch_compiler(toolchain_dir, args.compiler_zip)
+@@ -399,8 +401,11 @@ def main(argv=None) -> int:
+                          "(Linux, macOS; used only without clang), into the output directory")
+     ap.add_argument("--compiler-zip", default=LLVM_MINGW_URL, help=argparse.SUPPRESS)
+     ap.add_argument("--android", action="store_true",
+-                    help="build the library for the port's Android app (arm64) instead of this PC; with "
+-                         "--native, for the native app (libmh4u_code_native.so)")
++                    help="build the library for the port's Android app (arm64; armeabi-v7a with --32bit) "
++                         "instead of this PC; with --native, for the native app (libmh4u_code_native.so)")
++    ap.add_argument("--32bit", dest="bit32", action="store_true", default=None,
++                    help="with --android: the 32-bit app's library (armeabi-v7a); a build on a 32-bit "
++                         "phone (armv7l/armv8l) picks it on its own")
+     ap.add_argument("--any-version", action="store_true", help="don't insist on a known code.bin")
+     ap.add_argument("--mods", metavar="AZAHAR_USER_DIR",
+                     help="apply the code mods in AZAHAR_USER_DIR/load/mods/<program id>/ (default: the "
+diff --git a/mh4n/tools/recomp/build.py b/mh4n/tools/recomp/build.py
+index 003a852..31a680f 100644
+--- a/mh4n/tools/recomp/build.py
++++ b/mh4n/tools/recomp/build.py
+@@ -27,6 +27,7 @@ import argparse
+ import concurrent.futures as cf
+ import hashlib
+ import os
++import platform
+ import shutil
+ import struct
+ import subprocess
+@@ -40,10 +41,15 @@ DLL_GLUE = os.path.join(RUNTIME, "rc_dll.c")
+ BASE_FLAGS = ["-c", "-fPIC", "-ffp-contract=off", "-frounding-math", "-fno-strict-aliasing", "-fwrapv", "-w",
+               f"-I{RUNTIME}"]
+ 
+-# ── Android (the arm64 app): the C library's headers are the few in runtime/android, and the
+-# functions come from the device's libc.so and libm.so, which the library names as needed
+-# through two empty stand-ins it is linked against. API 29 is the app's minSdk.
+-ANDROID_TARGET = "aarch64-linux-android29"
++# ── Android (the arm64 app, or the 32-bit one with --32bit): the C library's headers are the few in
++# runtime/android, and the functions come from the device's libc.so and libm.so, which the library
++# names as needed through two empty stand-ins it is linked against. API 29 is the app's minSdk.
++ANDROID_TARGET_64 = "aarch64-linux-android29"
++ANDROID_TARGET_32 = "armv7a-linux-androideabi29"
++ANDROID_ZIG_TARGET_64 = "aarch64-linux-android"
++ANDROID_ZIG_TARGET_32 = "arm-linux-androideabi"  # (zig has no armv7a arch name: its arm baseline is ARMv7-A with VFPv3)
++ANDROID_TARGET = ANDROID_TARGET_64      # (clang's --target; set_android_32bit switches both)
++ANDROID_ZIG_TARGET = ANDROID_ZIG_TARGET_64
+ ANDROID_INCLUDE = os.path.join(RUNTIME, "android")
+ ANDROID_SONAME = "libmh4u_code.so"
+ ANDROID_PAGE = 16384  # Android 15's 16 KB pages; 4 KB devices load such a library too
+@@ -61,6 +67,21 @@ def android_soname(native: bool = False, deterministic: bool = False) -> str:
+     return f"libmh4u_code{native_suffix(native, deterministic)}.so"
+ 
+ 
++def set_android_32bit(use_32: bool = True) -> None:
++    """The code library targets the 32-bit app (armeabi-v7a) instead of arm64-v8a: the guest's C
++    is 32-bit everywhere (the 3DS is a 32-bit machine), so the ARMv7 codegen is the natural one
++    for it. The app for it is built with -DANDROID_ABI=armeabi-v7a."""
++    global ANDROID_TARGET, ANDROID_ZIG_TARGET
++    ANDROID_TARGET = ANDROID_TARGET_32 if use_32 else ANDROID_TARGET_64
++    ANDROID_ZIG_TARGET = ANDROID_ZIG_TARGET_32 if use_32 else ANDROID_ZIG_TARGET_64
++
++
++def android_wants_32bit() -> bool:
++    """A build running on a 32-bit Android phone (the on-phone builder) makes a 32-bit library:
++    32-bit userland's uname says armv7l, or armv8l on an ARMv8 CPU run in 32-bit mode."""
++    return platform.machine().lower() in ("armv7l", "armv8l")
++
++
+ def is_zig(cc: str) -> bool:
+     return "zig" in os.path.basename(cc).lower()
+ 
+@@ -78,7 +99,7 @@ def android_compiler(cc: str) -> str:
+ 
+ 
+ def android_target_flags(cc: str) -> list[str]:
+-    return ["-target", "aarch64-linux-android"] if is_zig(cc) else [f"--target={ANDROID_TARGET}"]
++    return ["-target", ANDROID_ZIG_TARGET] if is_zig(cc) else [f"--target={ANDROID_TARGET}"]
+ 
+ 
+ def android_link_flags(cc: str, outdir: str, soname: str = ANDROID_SONAME) -> list[str]:
+@@ -262,11 +283,17 @@ def main(argv=None) -> int:
+     ap.add_argument("--deterministic", action="store_true",
+                     help="with --native: keep charging cycles at every yield point "
+                          "(RC_NATIVE_DETERMINISTIC)")
+-    ap.add_argument("--android", action="store_true", help="the code library for Android's arm64 app")
++    ap.add_argument("--android", action="store_true", help="the code library for the Android app (arm64; "
++                         "armeabi-v7a with --32bit)")
++    ap.add_argument("--32bit", dest="bit32", action="store_true", default=None,
++                    help="with --android: the 32-bit app's library (armeabi-v7a); a build on a 32-bit "
++                         "phone (armv7l/armv8l) picks it on its own")
+     ap.add_argument("--cc", default="clang")
+     ap.add_argument("-D", dest="defines", action="append", default=[])
+     ap.add_argument("-o", "--lib", default="")
+     args = ap.parse_args(argv)
++    if args.android and args.bit32:
++        set_android_32bit()
+     native = native_defines(args.native, args.deterministic)
+     suffix = native_suffix(args.native, args.deterministic)
+     if args.code_library:
+diff --git a/scripts/build_apk.sh b/scripts/build_apk.sh
+index ec1c1f0..f8675ce 100644
+--- a/scripts/build_apk.sh
++++ b/scripts/build_apk.sh
+@@ -4,7 +4,8 @@
+ # builder's two launchers (libpyrun.so, libzigcc.so) and its tools (mh4n's tools/ and config/, zipped by
+ # scripts/pack_builder_tools.py), then Gradle.
+ #
+-#   sh scripts/build_apk.sh
++#   sh scripts/build_apk.sh                        (arm64-v8a)
++#   ANDROID_ABI=armeabi-v7a sh scripts/build_apk.sh  (the 32-bit app: no libadrenotools hooks)
+ #
+ # The APK is android/app/build/outputs/apk/release/app-release.apk when android/keystore.properties (storePassword,
+ # keyAlias, keyPassword) and android/mh4u.keystore hold your own signing key; without them it builds a debug APK
+@@ -17,23 +18,29 @@
+ set -e
+ . "$(dirname "$0")/android_env.sh"
+ 
+-SDL3_DIR="$ROOT/build/sdl3/out"
+-[ -f "$SDL3_DIR/lib/libSDL3.so" ] || { echo "No SDL3 in $SDL3_DIR: run sh scripts/build_sdl3.sh first." >&2; exit 1; }
+-BUILD="$ROOT/build/app"
++ABI=${ANDROID_ABI:-arm64-v8a}
++case "$ABI" in arm64-v8a|armeabi-v7a) ;; *) echo "ANDROID_ABI is $ABI: use arm64-v8a or armeabi-v7a" >&2; exit 1 ;; esac
++
++SDL3_DIR="$ROOT/build/sdl3/out/$ABI"
++[ -f "$SDL3_DIR/lib/libSDL3.so" ] || { echo "No SDL3 for $ABI in $SDL3_DIR: run ANDROID_ABI=$ABI sh scripts/build_sdl3.sh first." >&2; exit 1; }
++BUILD="$ROOT/build/app-$ABI"
+ R=$(native_path "$ROOT")
+ N=$(native_path "$NDK")
+ # (no paths of this computer in the libraries: sources as mh4n/..., app_native/...)
+ MAP="-ffile-prefix-map=$R/= -ffile-prefix-map=$N/=ndk/"
++NEON=""
++[ "$ABI" = armeabi-v7a ] && NEON="-DANDROID_ARM_NEON=ON"
+ "$CMAKE" -S "$R/app_native" -B "$(native_path "$BUILD")" -G Ninja -DCMAKE_MAKE_PROGRAM="$NINJA" \
+-    -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 -DANDROID_STL=c++_static \
++    -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" -DANDROID_ABI="$ABI" -DANDROID_PLATFORM=android-28 -DANDROID_STL=c++_static $NEON \
+     -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMH4N_DIR="$R/mh4n" -DSDL3_DIR="$(native_path "$SDL3_DIR")/lib/cmake/SDL3" \
+     -DCMAKE_C_FLAGS="$MAP" -DCMAKE_CXX_FLAGS="$MAP" -DCMAKE_ASM_FLAGS="$MAP"
+-HOOKS="hook_impl main_hook file_redirect_hook gsl_alloc_hook"
++# the hooks are AArch64-only (libadrenotools); the 32-bit app runs with the system's driver
++if [ "$ABI" = arm64-v8a ]; then HOOKS="hook_impl main_hook file_redirect_hook gsl_alloc_hook"; else HOOKS=""; fi
+ TOOLS="pyrun zigcc"   # (the on-phone builder's launchers: programs named lib*.so, so Android lets the app run them)
+ # shellcheck disable=SC2086
+ "$CMAKE" --build "$(native_path "$BUILD")" --target main $HOOKS $TOOLS --parallel
+ 
+-LIBS="$ROOT/android/app/src/main/jniLibs/arm64-v8a"
++LIBS="$ROOT/android/app/src/main/jniLibs/$ABI"
+ mkdir -p "$LIBS"
+ "$STRIP" --strip-debug -o "$(native_path "$LIBS/libmain.so")" "$(native_path "$BUILD/libmain.so")"
+ for H in $HOOKS; do
+diff --git a/scripts/build_sdl3.sh b/scripts/build_sdl3.sh
+index 55f7ef9..8e8c946 100644
+--- a/scripts/build_sdl3.sh
++++ b/scripts/build_sdl3.sh
+@@ -1,20 +1,24 @@
+ #!/bin/sh
+-# Builds SDL 3.4.18 for the app (arm64-v8a, Android 9 and later) from its release on GitHub, into build/sdl3/out.
+-# Run it once before scripts/build_apk.sh:
++# Builds SDL 3.4.18 for the app (Android 9 and later) from its release on GitHub, into build/sdl3/out/<abi>.
++# Run it once per ABI before scripts/build_apk.sh (ANDROID_ABI=armeabi-v7a for the 32-bit app):
+ #
+-#   sh scripts/build_sdl3.sh
++#   ANDROID_ABI=arm64-v8a sh scripts/build_sdl3.sh
++#   ANDROID_ABI=armeabi-v7a sh scripts/build_sdl3.sh
+ #
+ # Needs the Android NDK 27.0.12077973, CMake 3.25 or newer, Ninja, curl and tar (see scripts/android_env.sh).
+ set -e
+ . "$(dirname "$0")/android_env.sh"
+ 
++ABI=${ANDROID_ABI:-arm64-v8a}
++case "$ABI" in arm64-v8a|armeabi-v7a) ;; *) echo "ANDROID_ABI is $ABI: use arm64-v8a or armeabi-v7a" >&2; exit 1 ;; esac
++
+ VERSION=3.4.18
+ SHA256=9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3
+ URL=https://github.com/libsdl-org/SDL/releases/download/release-$VERSION/SDL3-$VERSION.tar.gz
+ WORK="$ROOT/build/sdl3"
+ SRC="$WORK/SDL3-$VERSION"
+ OUT="$WORK/out"
+-if [ -f "$OUT/.built" ]; then echo "SDL3 $VERSION: already built in $OUT"; exit 0; fi
++[ -f "$OUT/$ABI/.built" ] && { echo "SDL3 $VERSION ($ABI): already built in $OUT/$ABI"; exit 0; }
+ mkdir -p "$WORK"
+ 
+ if [ ! -d "$SRC" ]; then
+@@ -29,11 +33,11 @@ if [ ! -d "$SRC" ]; then
+ fi
+ 
+ S=$(native_path "$SRC")
+-"$CMAKE" -S "$S" -B "$(native_path "$WORK/build")" -G Ninja -DCMAKE_MAKE_PROGRAM="$NINJA" \
+-    -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 \
+-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX="$(native_path "$OUT")" \
++"$CMAKE" -S "$S" -B "$(native_path "$WORK/build-$ABI")" -G Ninja -DCMAKE_MAKE_PROGRAM="$NINJA" \
++    -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" -DANDROID_ABI="$ABI" -DANDROID_PLATFORM=android-28 \
++    -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX="$(native_path "$OUT/$ABI")" \
+     -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF \
+     -DCMAKE_C_FLAGS="-ffile-prefix-map=$S/=SDL3/" -DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384
+-"$CMAKE" --build "$(native_path "$WORK/build")" --target install --parallel
+-touch "$OUT/.built"
+-echo "SDL3 $VERSION: $OUT"
++"$CMAKE" --build "$(native_path "$WORK/build-$ABI")" --target install --parallel
++touch "$OUT/$ABI/.built"
++echo "SDL3 $VERSION ($ABI): $OUT/$ABI"

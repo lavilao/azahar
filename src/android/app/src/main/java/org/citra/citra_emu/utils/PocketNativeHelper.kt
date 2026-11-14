@@ -148,9 +148,10 @@ object PocketNativeHelper {
 
     /**
      * Copia los perfiles por título empaquetados en assets/pn/titles (los
-     * titles/*/profile.toml de pocket-native, con los arreglos de shaders
-     * PowerVR por juego) al directorio que el motor lee (filesDir/titles,
-     * POCKET_NATIVE_TITLES del android_main). Idempotente por versión.
+     * archivos profile.toml de cada título de pocket-native, con los arreglos
+     * de shaders PowerVR por juego) al directorio que el motor lee
+     * (filesDir/titles, POCKET_NATIVE_TITLES del android_main). Idempotente
+     * por versión.
      */
     fun ensureEngineData(context: Context) {
         val files = context.filesDir

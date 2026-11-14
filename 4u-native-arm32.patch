@@ -173,6 +173,196 @@ index 0bc4ab2..bbe5113 100644
      SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
      SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
      if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_SENSOR)) {  // (sensors: the gyro's aim)
+diff --git a/app_native/builder/toolrun.c b/app_native/builder/toolrun.c
+index 1ce8dee..9155a33 100644
+--- a/app_native/builder/toolrun.c
++++ b/app_native/builder/toolrun.c
+@@ -113,13 +113,24 @@ int main(int argc, char **argv) {
+ 
+ #elif defined(TOOLRUN_ZIG)
+ 
+-/* The kernel's sigaction for arm64 (bionic's wrapper refuses the signals it keeps for itself) */
++/* The kernel's sigaction (bionic's wrapper refuses the signals it keeps for itself). The arm64
++ * one is three words and an 8-byte mask; the kernel's arm32 one packs that mask at offset 12,
++ * with no padding, so it is two 32-bit halves there. */
++#if defined(__aarch64__)
+ struct ksigaction {
+     void *handler;
+     unsigned long flags;
+     void *restorer;
+     uint64_t mask;
+ };
++#else
++struct ksigaction {
++    void *handler;
++    unsigned long flags;
++    void *restorer;
++    uint32_t mask[2];
++};
++#endif
+ 
+ /* What bionic set up for this program that Zig's C library (musl) doesn't expect: its signal handlers (debuggerd's),
+  * blocked signals and an alternate signal stack. */
+@@ -133,18 +144,48 @@ static void plain_signals(void) {
+     sigaltstack(&ss, NULL);
+ }
+ 
+-/* Maps a static (ET_EXEC) AArch64 ELF program at its own addresses; returns its entry point and where its program
+- * headers are in memory. */
+-static uintptr_t load_elf(const char *path, Elf64_Ehdr *eh, uintptr_t *phdr_at) {
++/* The app's own kind of program to load: an AArch64 ELF for the arm64 app, an ARM one for the
++ * 32-bit app (the loaded tool is built for the app's ABI). */
++#if defined(__LP64__)
++typedef Elf64_Ehdr Elf_Ehdr;
++typedef Elf64_Phdr Elf_Phdr;
++#define TOOLRUN_KIND "64-bit ARM"
++#define TOOLRUN_ELF_CLASS ELFCLASS64
++#define TOOLRUN_ELF_MACHINE EM_AARCH64
++#else
++typedef Elf32_Ehdr Elf_Ehdr;
++typedef Elf32_Phdr Elf_Phdr;
++#define TOOLRUN_KIND "32-bit ARM"
++#define TOOLRUN_ELF_CLASS ELFCLASS32
++#define TOOLRUN_ELF_MACHINE EM_ARM
++#endif
++
++/* mmap at a fixed place. MAP_FIXED_NOREPLACE is the polite way (nothing is clobbered), but a
++ * 4.14 kernel (many 32-bit phones) does not know the flag and answers EINVAL; those processes
++ * have the low addresses free anyway (a static program's), so the plain MAP_FIXED of the loaders
++ * of old takes over there. */
++static void *map_fixed(uintptr_t start, size_t len, int prot, int extra, int fd, off_t off) {
++    void *m = mmap((void *)start, len, prot, MAP_PRIVATE | MAP_FIXED_NOREPLACE | extra, fd, off);
++    if (m == MAP_FAILED && errno == EINVAL) {
++        errno = 0;
++        m = mmap((void *)start, len, prot, MAP_PRIVATE | MAP_FIXED | extra, fd, off);
++    }
++    return m;
++}
++
++/* Maps a static (ET_EXEC) ELF program of the app's own kind at its own addresses; returns its entry point and where
++ * its program headers are in memory. */
++static uintptr_t load_elf(const char *path, Elf_Ehdr *eh, uintptr_t *phdr_at) {
+     int fd = open(path, O_RDONLY | O_CLOEXEC);
+     if (fd < 0) die("open", path);
+     if (pread(fd, eh, sizeof *eh, 0) != (ssize_t)sizeof *eh) die("read", path);
+-    if (memcmp(eh->e_ident, ELFMAG, SELFMAG) != 0 || eh->e_ident[EI_CLASS] != ELFCLASS64 || eh->e_machine != EM_AARCH64)
+-        die("not a 64-bit ARM program", path);
+-    if (eh->e_type != ET_EXEC || eh->e_phentsize != sizeof(Elf64_Phdr) || eh->e_phnum == 0 || eh->e_phnum > 64)
++    if (memcmp(eh->e_ident, ELFMAG, SELFMAG) != 0 || eh->e_ident[EI_CLASS] != TOOLRUN_ELF_CLASS ||
++        eh->e_machine != TOOLRUN_ELF_MACHINE)
++        die("not a " TOOLRUN_KIND " program", path);
++    if (eh->e_type != ET_EXEC || eh->e_phentsize != sizeof(Elf_Phdr) || eh->e_phnum == 0 || eh->e_phnum > 64)
+         die("not a static program", path);
+-    Elf64_Phdr ph[64];
+-    size_t phsize = (size_t)eh->e_phnum * sizeof(Elf64_Phdr);
++    Elf_Phdr ph[64];
++    size_t phsize = (size_t)eh->e_phnum * sizeof(Elf_Phdr);
+     if (pread(fd, ph, phsize, (off_t)eh->e_phoff) != (ssize_t)phsize) die("read", path);
+     uintptr_t ps = (uintptr_t)sysconf(_SC_PAGESIZE);
+     *phdr_at = 0;
+@@ -159,8 +200,7 @@ static uintptr_t load_elf(const char *path, Elf64_Ehdr *eh, uintptr_t *phdr_at)
+         uintptr_t file_end = p->p_vaddr + p->p_filesz, mem_end = p->p_vaddr + p->p_memsz;
+         uintptr_t page_end = (file_end + ps - 1) & ~(ps - 1);
+         if (p->p_filesz) {
+-            void *m = mmap((void *)start, file_end - start, prot, MAP_PRIVATE | MAP_FIXED_NOREPLACE, fd,
+-                           (off_t)(p->p_offset & ~(ps - 1)));
++            void *m = map_fixed(start, file_end - start, prot, 0, fd, (off_t)(p->p_offset & ~(ps - 1)));
+             if (m == MAP_FAILED) die("mmap", path);
+             if ((uintptr_t)m != start) die("the program's addresses are taken", path);
+             /* the rest of the last page of the file's part belongs to the zeroed part (.bss) */
+@@ -170,7 +210,7 @@ static uintptr_t load_elf(const char *path, Elf64_Ehdr *eh, uintptr_t *phdr_at)
+         }
+         uintptr_t end = (mem_end + ps - 1) & ~(ps - 1);
+         if (end > page_end) {
+-            void *m = mmap((void *)page_end, end - page_end, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
++            void *m = map_fixed(page_end, end - page_end, prot, MAP_ANONYMOUS, -1, 0);
+             if (m == MAP_FAILED || (uintptr_t)m != page_end) die("mmap (zeroed part)", path);
+         }
+         if (!*phdr_at && p->p_offset <= eh->e_phoff && eh->e_phoff + phsize <= p->p_offset + p->p_filesz)
+@@ -232,7 +272,7 @@ int main(int argc, char **argv) {
+     int nenv = 0;
+     while (environ[nenv]) nenv++;
+ 
+-    Elf64_Ehdr eh;
++    Elf_Ehdr eh;
+     uintptr_t phdr_at;
+     uintptr_t entry = load_elf(zig, &eh, &phdr_at);
+ 
+@@ -249,29 +289,33 @@ int main(int argc, char **argv) {
+     for (int i = 1; i < argc; i++) sargv[nfront + i] = push(&top, argv[i], strlen(argv[i]) + 1);
+     for (int i = 0; i < nenv; i++) senv[i] = push(&top, environ[i], strlen(environ[i]) + 1);
+     char *execfn = push(&top, zig, strlen(zig) + 1);
++#if defined(__LP64__)
+     char *platform = push(&top, "aarch64", 8);
++#else
++    char *platform = push(&top, "armv7l", 7);
++#endif
+     unsigned char rnd[16];
+     if (getentropy(rnd, sizeof rnd) != 0) {
+         for (size_t i = 0; i < sizeof rnd; i++) rnd[i] = (unsigned char)(i * 131 + (uintptr_t)&rnd);
+     }
+     char *random = push(&top, rnd, sizeof rnd);
+ 
+-    uint64_t aux[][2] = {
+-        {AT_PHDR, phdr_at}, {AT_PHENT, sizeof(Elf64_Phdr)}, {AT_PHNUM, eh.e_phnum}, {AT_PAGESZ, (uint64_t)sysconf(_SC_PAGESIZE)},
+-        {AT_BASE, 0}, {AT_FLAGS, 0}, {AT_ENTRY, entry}, {AT_UID, getuid()}, {AT_EUID, geteuid()}, {AT_GID, getgid()},
+-        {AT_EGID, getegid()}, {AT_SECURE, 0}, {AT_RANDOM, (uint64_t)(uintptr_t)random}, {AT_HWCAP, getauxval(AT_HWCAP)},
++    uintptr_t aux[][2] = {
++        {AT_PHDR, phdr_at}, {AT_PHENT, sizeof(Elf_Phdr)}, {AT_PHNUM, eh.e_phnum}, {AT_PAGESZ, (uintptr_t)sysconf(_SC_PAGESIZE)},
++        {AT_BASE, 0}, {AT_FLAGS, 0}, {AT_ENTRY, entry}, {AT_UID, (uintptr_t)getuid()}, {AT_EUID, (uintptr_t)geteuid()}, {AT_GID, (uintptr_t)getgid()},
++        {AT_EGID, (uintptr_t)getegid()}, {AT_SECURE, 0}, {AT_RANDOM, (uintptr_t)random}, {AT_HWCAP, getauxval(AT_HWCAP)},
+         {AT_HWCAP2, getauxval(AT_HWCAP2)}, {AT_CLKTCK, getauxval(AT_CLKTCK) ? getauxval(AT_CLKTCK) : 100},
+-        {AT_SYSINFO_EHDR, getauxval(AT_SYSINFO_EHDR)}, {AT_PLATFORM, (uint64_t)(uintptr_t)platform},
+-        {AT_EXECFN, (uint64_t)(uintptr_t)execfn}, {AT_NULL, 0},
++        {AT_SYSINFO_EHDR, getauxval(AT_SYSINFO_EHDR)}, {AT_PLATFORM, (uintptr_t)platform},
++        {AT_EXECFN, (uintptr_t)execfn}, {AT_NULL, 0},
+     };
+     size_t naux = sizeof aux / sizeof aux[0];
+     size_t words = 1 + (size_t)nargs + 1 + (size_t)nenv + 1 + 2 * naux;
+-    uint64_t *sp = (uint64_t *)(((uintptr_t)top - words * 8) & ~(uintptr_t)15);
+-    uint64_t *w = sp;
+-    *w++ = (uint64_t)nargs;
+-    for (int i = 0; i < nargs; i++) *w++ = (uint64_t)(uintptr_t)sargv[i];
++    uintptr_t *sp = (uintptr_t *)(((uintptr_t)top - words * sizeof(uintptr_t)) & ~(uintptr_t)15);
++    uintptr_t *w = sp;
++    *w++ = (uintptr_t)nargs;
++    for (int i = 0; i < nargs; i++) *w++ = (uintptr_t)sargv[i];
+     *w++ = 0;
+-    for (int i = 0; i < nenv; i++) *w++ = (uint64_t)(uintptr_t)senv[i];
++    for (int i = 0; i < nenv; i++) *w++ = (uintptr_t)senv[i];
+     *w++ = 0;
+     for (size_t i = 0; i < naux; i++) {
+         *w++ = aux[i][0];
+@@ -279,6 +323,7 @@ int main(int argc, char **argv) {
+     }
+ 
+     plain_signals();
++#if defined(__aarch64__)
+     register uint64_t new_sp __asm__("x1") = (uint64_t)(uintptr_t)sp;
+     register uint64_t new_pc __asm__("x2") = entry;
+     __asm__ volatile(
+@@ -291,6 +336,21 @@ int main(int argc, char **argv) {
+         :
+         : "r"(new_sp), "r"(new_pc)
+         : "memory");
++#else
++    register uint32_t new_sp __asm__("r1") = (uint32_t)(uintptr_t)sp;
++    register uint32_t new_pc __asm__("r2") = (uint32_t)entry;
++    __asm__ volatile(
++        "mov sp, r1\n"
++        "mov r0, #0\n"
++        "mov r1, #0\n"
++        "mov r7, #0\n"
++        "mov r11, #0\n"
++        "mov lr, #0\n"
++        "bx r2\n"
++        :
++        : "r"(new_sp), "r"(new_pc)
++        : "memory");
++#endif
+     __builtin_unreachable();
+ }
+ 
 diff --git a/app_native/crash_screen.cpp b/app_native/crash_screen.cpp
 index 2aedbf5..8550efe 100644
 --- a/app_native/crash_screen.cpp
@@ -251,6 +441,73 @@ index 1587473..4a492fe 100644
                  todo_library(r);
              } else if (!inside.empty() && !beside.empty() && inside != beside) {
                  r.problem(F("%s and the .id beside it come from different builds (copied from two places). Don't use a library someone else made.", name.c_str()),
+diff --git a/mh4n/native/app/report/crash_posix.cpp b/mh4n/native/app/report/crash_posix.cpp
+index 3b6eee9..8ba4261 100644
+--- a/mh4n/native/app/report/crash_posix.cpp
++++ b/mh4n/native/app/report/crash_posix.cpp
+@@ -261,6 +261,8 @@ std::uintptr_t InterruptedPc(void* context) {
+         static_cast<const ucontext_t*>(context)->uc_mcontext.gregs[REG_RIP]);
+ #elif defined(__linux__) && defined(__aarch64__)
+     return static_cast<std::uintptr_t>(static_cast<const ucontext_t*>(context)->uc_mcontext.pc);
++#elif defined(__linux__) && defined(__arm__)
++    return static_cast<std::uintptr_t>(static_cast<const ucontext_t*>(context)->uc_mcontext.arm_pc);
+ #else
+     (void)context;
+     return 0;
+diff --git a/mh4n/native/include/mh4n/clock.h b/mh4n/native/include/mh4n/clock.h
+index 4846716..158b8ce 100644
+--- a/mh4n/native/include/mh4n/clock.h
++++ b/mh4n/native/include/mh4n/clock.h
+@@ -30,6 +30,7 @@ inline constexpr u64 kNanosecondsPerSecond = 1000000000;
+ // scheduler switch): the whole seconds (or whole tick-seconds) apart from the rest, which stays inside 64 bits, each
+ // divided by a constant. Exact for every input, as the 128-bit forms they replace (kept below for the checks).
+ namespace clock_detail {
++#if defined(__SIZEOF_INT128__)
+ constexpr u64 NsToTicks128(u64 ns) {
+     const unsigned __int128 ticks = static_cast<unsigned __int128>(ns) * kTicksPerSecond / kNanosecondsPerSecond;
+     return ticks > ~u64{0} ? ~u64{0} : static_cast<u64>(ticks);
+@@ -43,6 +44,41 @@ constexpr u64 TicksToNsCeil128(u64 ticks) {
+         (static_cast<unsigned __int128>(ticks) * kNanosecondsPerSecond + kTicksPerSecond - 1) / kTicksPerSecond;
+     return ns > ~u64{0} ? ~u64{0} : static_cast<u64>(ns);
+ }
++#else
++// A 32-bit target has no __int128: the same three from a 64x64->128 schoolbook product and a
++// 128-by-<2^32 long division, both all-constexpr and exact for every input, so the checks below
++// and the overflow paths they feed keep their exactness there too (both constants are < 2^32).
++struct U128 { u64 hi, lo; };
++constexpr U128 Mul64(u64 a, u64 b) {
++    const u64 a0 = a & 0xFFFFFFFFull, a1 = a >> 32, b0 = b & 0xFFFFFFFFull, b1 = b >> 32;
++    const u64 p00 = a0 * b0, p01 = a0 * b1, p10 = a1 * b0, p11 = a1 * b1;
++    const u64 mid = p10 + (p00 >> 32);             // no overflow: both sides stay under 2^64 - 2^31
++    const u64 mid2 = p01 + (mid & 0xFFFFFFFFull);
++    return {p11 + (mid >> 32) + (mid2 >> 32), (mid2 << 32) | (p00 & 0xFFFFFFFFull)};
++}
++constexpr u64 Div128BySmall(u64 hi, u64 lo, u64 d) {  // (hi:lo)/d for d < 2^32, saturating
++    const u64 q1 = hi / d, r1 = hi % d;               // the quotient passes 64 bits only when q1 is set
++    const u64 x = (r1 << 32) | (lo >> 32);
++    const u64 q2h = x / d, r2 = x % d;
++    const u64 y = (r2 << 32) | (lo & 0xFFFFFFFFull);
++    return q1 != 0 ? ~u64{0} : (q2h << 32) | (y / d);
++}
++constexpr u64 NsToTicks128(u64 ns) {
++    const U128 p = Mul64(ns, kTicksPerSecond);
++    return Div128BySmall(p.hi, p.lo, kNanosecondsPerSecond);
++}
++constexpr u64 TicksToNs128(u64 ticks) {
++    const U128 p = Mul64(ticks, kNanosecondsPerSecond);
++    return Div128BySmall(p.hi, p.lo, kTicksPerSecond);
++}
++constexpr u64 TicksToNsCeil128(u64 ticks) {
++    U128 p = Mul64(ticks, kNanosecondsPerSecond);
++    const u64 add = kTicksPerSecond - 1;
++    p.lo += add;
++    p.hi += (p.lo < add) ? 1 : 0;
++    return Div128BySmall(p.hi, p.lo, kTicksPerSecond);
++}
++#endif
+ }  // namespace clock_detail
+ 
+ // Ticks in `ns` nanoseconds, rounded down. Saturates at the largest u64 (never reached: u64 nanoseconds are fewer ticks).
 diff --git a/mh4n/native/include/mh4n/memory.h b/mh4n/native/include/mh4n/memory.h
 index 7e7a8bd..4356a50 100644
 --- a/mh4n/native/include/mh4n/memory.h
@@ -306,6 +563,24 @@ index 7b6c3cf..b26fb2a 100644
      endif()
  else()
      message(STATUS "mh4n_cpu: fiber.cpp or recomp.h not found around native/: an empty module")
+diff --git a/mh4n/native/src/gpu/backend/core/access.cpp b/mh4n/native/src/gpu/backend/core/access.cpp
+index 802ba44..d4b4191 100644
+--- a/mh4n/native/src/gpu/backend/core/access.cpp
++++ b/mh4n/native/src/gpu/backend/core/access.cpp
+@@ -29,9 +29,10 @@ VkCommandBuffer CommandBuffer(Recorder& recorder) {
+     return impl.vulkan_list()->vk;
+ }
+ 
+-// A VkSurfaceKHR is a pointer on the 64-bit targets of the port (no 32-bit target is built).
+-static_assert(std::is_pointer_v<VkSurfaceKHR> && sizeof(VkSurfaceKHR) == sizeof(u64),
+-              "non-dispatchable handles are 64-bit pointers");
++// A VkSurfaceKHR round-trips through a 64-bit SurfaceHandle: on 64-bit targets it is a pointer,
++// and in a 32-bit process the Vulkan headers typedef the non-dispatchable handles as uint64_t.
++static_assert(sizeof(VkSurfaceKHR) == sizeof(u64),
++              "a non-dispatchable handle must fit in a SurfaceHandle");
+ 
+ SurfaceHandle SurfaceFrom(VkSurfaceKHR surface) {
+     SurfaceHandle handle;
 diff --git a/mh4n/native/src/memory/host_posix.cpp b/mh4n/native/src/memory/host_posix.cpp
 index bf29baa..abf0231 100644
 --- a/mh4n/native/src/memory/host_posix.cpp
@@ -517,7 +792,7 @@ index 5bfbd3c..4ea3e3a 100644
      ap.add_argument("--mods", metavar="AZAHAR_USER_DIR",
                      help="apply the code mods in AZAHAR_USER_DIR/load/mods/<program id>/ (default: the "
 diff --git a/mh4n/tools/recomp/build.py b/mh4n/tools/recomp/build.py
-index 003a852..31a680f 100644
+index 003a852..39d9463 100644
 --- a/mh4n/tools/recomp/build.py
 +++ b/mh4n/tools/recomp/build.py
 @@ -27,6 +27,7 @@ import argparse
@@ -579,7 +854,96 @@ index 003a852..31a680f 100644
  
  
  def android_link_flags(cc: str, outdir: str, soname: str = ANDROID_SONAME) -> list[str]:
-@@ -262,11 +283,17 @@ def main(argv=None) -> int:
+@@ -103,24 +124,40 @@ def android_link_flags(cc: str, outdir: str, soname: str = ANDROID_SONAME) -> li
+ 
+ def android_library_problems(path: str, soname: str = ANDROID_SONAME) -> list[str]:
+     """What would keep Android's linker from loading the library at `path` in the app (an empty
+-    list when nothing): another machine, no libc.so/libm.so needed, another soname, text
+-    relocations, pages under 16 KB, or a function the device's C library doesn't have."""
++    list when nothing): another class or machine (the 32-bit app takes a 32-bit ARM ELF, the
++    arm64 one an AArch64 ELF), no libc.so/libm.so needed, another soname, text relocations,
++    pages under 16 KB, or a function the device's C library doesn't have."""
++    elf32 = ANDROID_TARGET == ANDROID_TARGET_32
+     with open(path, "rb") as f:
+         data = f.read()
+-    if data[:4] != b"\x7fELF" or data[4] != 2 or data[5] != 1:
+-        return ["not a 64-bit little-endian ELF file"]
++    if data[:4] != b"\x7fELF" or data[5] != 1:
++        return ["not a little-endian ELF file"]
++    if (data[4] == 1) != elf32:
++        return ["not a " + ("32" if elf32 else "64") + "-bit ELF file"]
+     machine = struct.unpack_from("<H", data, 18)[0]
+-    problems = [] if machine == 183 else [f"built for machine {machine}, not AArch64 (183)"]
+-    e_phoff, e_shoff = struct.unpack_from("<QQ", data, 32)
+-    e_phentsize, e_phnum, e_shentsize, e_shnum = struct.unpack_from("<HHHH", data, 54)
++    want = 40 if elf32 else 183  # EM_ARM for armeabi-v7a, EM_AARCH64 for arm64-v8a
++    problems = [] if machine == want else [f"built for machine {machine}, not {want}"]
++    # the two ELF classes lay the rest of the header, the program headers and the section
++    # headers out differently, and their dynamic tables and symbols have other sizes
++    if elf32:
++        e_phoff, e_shoff = struct.unpack_from("<II", data, 28)
++        e_phentsize, e_phnum, e_shentsize, e_shnum = struct.unpack_from("<HHHH", data, 42)
++        phdr, shdr = "<IIIIIIII", "<IIIIIIIIII"
++        dyn, dynsz, symsz, sym_tail = "<iI", 8, 16, 12
++    else:
++        e_phoff, e_shoff = struct.unpack_from("<QQ", data, 32)
++        e_phentsize, e_phnum, e_shentsize, e_shnum = struct.unpack_from("<HHHH", data, 54)
++        phdr, shdr = "<IIQQQQQQ", "<IIQQQQIIQQ"
++        dyn, dynsz, symsz, sym_tail = "<qQ", 16, 24, 0
+     dynamic = None
++    off_at, sz_at = (1, 4) if elf32 else (2, 5)  # where p_offset/p_filesz sit in a program header
+     for i in range(e_phnum):
+-        p_type, _, p_offset, p_vaddr, _, p_filesz, _, p_align = struct.unpack_from("<IIQQQQQQ", data, e_phoff + i * e_phentsize)
+-        if p_type == 1 and p_align < ANDROID_PAGE:
+-            problems.append(f"a segment aligned to {p_align} bytes, not {ANDROID_PAGE}")
+-        if p_type == 2:
+-            dynamic = (p_offset, p_filesz)
+-    sections = [struct.unpack_from("<IIQQQQIIQQ", data, e_shoff + i * e_shentsize) for i in range(e_shnum)]
++        fields = struct.unpack_from(phdr, data, e_phoff + i * e_phentsize)
++        if fields[0] == 1 and fields[-1] < ANDROID_PAGE:
++            problems.append(f"a segment aligned to {fields[-1]} bytes, not {ANDROID_PAGE}")
++        if fields[0] == 2:
++            dynamic = (fields[off_at], fields[sz_at])
++    sections = [struct.unpack_from(shdr, data, e_shoff + i * e_shentsize) for i in range(e_shnum)]
+     dynsym = next((s for s in sections if s[1] == 11), None)  # SHT_DYNSYM
+     if dynamic is None or dynsym is None:
+         return problems + ["no dynamic section: not a shared library"]
+@@ -129,8 +166,8 @@ def android_library_problems(path: str, soname: str = ANDROID_SONAME) -> list[st
+         start = strtab[4] + offset
+         return data[start:data.index(b"\0", start)].decode("ascii", "replace")
+     needed, found_soname, textrel = [], "", False
+-    for off in range(dynamic[0], dynamic[0] + dynamic[1], 16):
+-        tag, value = struct.unpack_from("<qQ", data, off)
++    for off in range(dynamic[0], dynamic[0] + dynamic[1], dynsz):
++        tag, value = struct.unpack_from(dyn, data, off)
+         if tag == 0:
+             break
+         if tag == 1:
+@@ -147,11 +184,20 @@ def android_library_problems(path: str, soname: str = ANDROID_SONAME) -> list[st
+     if textrel:
+         problems.append("it has text relocations")
+     imports = set()
+-    for off in range(dynsym[4], dynsym[4] + dynsym[5], 24):
+-        name, info, _, shndx = struct.unpack_from("<IBBH", data, off)
++    for off in range(dynsym[4], dynsym[4] + dynsym[5], symsz):
++        if elf32:  # Elf32_Sym: st_name at 0, then st_info/st_other/st_shndx at byte 12
++            name = struct.unpack_from("<I", data, off)[0]
++            info, _, shndx = struct.unpack_from("<BBH", data, off + sym_tail)
++        else:  # Elf64_Sym: st_name, st_info, st_other, st_shndx first
++            name, info, _, shndx = struct.unpack_from("<IBBH", data, off)
+         if name and shndx == 0 and (info >> 4) != 2:  # undefined, not weak
+             imports.add(text(name))
+-    missing = sorted(imports - ANDROID_IMPORTS)
++    if elf32:
++        # the compiler's integer helpers (a 64-bit divide is __aeabi_ldivmod) are fine too:
++        # Android's libc.so carries the whole arm set bionic takes from libgcc
++        missing = sorted(s for s in imports - ANDROID_IMPORTS if not s.startswith("__aeabi_"))
++    else:
++        missing = sorted(imports - ANDROID_IMPORTS)
+     if missing:
+         problems.append("it calls functions from outside the few the port takes from Android's C library: " + ", ".join(missing))
+     return problems
+@@ -262,11 +308,17 @@ def main(argv=None) -> int:
      ap.add_argument("--deterministic", action="store_true",
                      help="with --native: keep charging cycles at every yield point "
                           "(RC_NATIVE_DETERMINISTIC)")
@@ -598,8 +962,33 @@ index 003a852..31a680f 100644
      native = native_defines(args.native, args.deterministic)
      suffix = native_suffix(args.native, args.deterministic)
      if args.code_library:
+diff --git a/mh4n/tools/recomp/runtime/recomp.h b/mh4n/tools/recomp/runtime/recomp.h
+index 567fbc5..fc722af 100644
+--- a/mh4n/tools/recomp/runtime/recomp.h
++++ b/mh4n/tools/recomp/runtime/recomp.h
+@@ -456,6 +456,9 @@ RC_INLINE void rc_set_cpsr(RCtx *ctx, u32 v, u32 mask) {
+ #define RC_HW_FTZ 1
+ #elif defined(__aarch64__)
+ #define RC_HW_FTZ 1
++#elif defined(__arm__)
++/* ARMv7's FPSCR carries the guest's FZ (bit 24) and DN (bit 25) in the same places */
++#define RC_HW_FTZ 1
+ #endif
+ RC_INLINE void rc_apply_fpscr(u32 fpscr) {
+     static const int modes[4] = {FE_TONEAREST, FE_UPWARD, FE_DOWNWARD, FE_TOWARDZERO};
+@@ -467,6 +470,10 @@ RC_INLINE void rc_apply_fpscr(u32 fpscr) {
+     __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
+     fpcr = (fpcr & ~(1ul << 24)) | ((fpscr & 0x01000000u) ? (1ul << 24) : 0);
+     __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
++#elif defined(__arm__)
++    u32 host_fpscr;
++    __asm__ volatile("vmrs %0, fpscr" : "=r"(host_fpscr));
++    __asm__ volatile("vmsr fpscr, %0" : : "r"((host_fpscr & ~0x03000000u) | (fpscr & 0x03000000u)));
+ #endif
+ }
+ #define rc_apply_rounding rc_apply_fpscr
 diff --git a/scripts/build_apk.sh b/scripts/build_apk.sh
-index ec1c1f0..f8675ce 100644
+index ec1c1f0..000d6ed 100644
 --- a/scripts/build_apk.sh
 +++ b/scripts/build_apk.sh
 @@ -4,7 +4,8 @@
@@ -648,6 +1037,13 @@ index ec1c1f0..f8675ce 100644
  mkdir -p "$LIBS"
  "$STRIP" --strip-debug -o "$(native_path "$LIBS/libmain.so")" "$(native_path "$BUILD/libmain.so")"
  for H in $HOOKS; do
+@@ -54,5 +61,5 @@ echo "code library id: $(cat "$ROOT/android/app/src/main/assets/code_library_id.
+ cd "$ROOT/android"
+ ANDROID_HOME=$(native_path "$SDK"); export ANDROID_HOME   # (Gradle's SDK, without a local.properties)
+ if [ -f keystore.properties ] && [ -f mh4u.keystore ]; then TASK=assembleRelease; KIND=release; else TASK=assembleDebug; KIND=debug; fi
+-sh ./gradlew "$TASK" -q
++bash ./gradlew "$TASK" -q
+ ls -l "app/build/outputs/apk/$KIND/"*.apk
 diff --git a/scripts/build_sdl3.sh b/scripts/build_sdl3.sh
 index 55f7ef9..8e8c946 100644
 --- a/scripts/build_sdl3.sh

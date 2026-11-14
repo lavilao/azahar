@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 import org.citra.citra_emu.CitraApplication
 import org.citra.citra_emu.HomeNavigationDirections
 import org.citra.citra_emu.NativeLibrary
+import org.citra.citra_emu.activities.PocketNativeActivity
 import org.citra.citra_emu.R
 import org.citra.citra_emu.adapters.GameAdapter.GameViewHolder
 import org.citra.citra_emu.databinding.CardGameBinding
@@ -126,6 +127,17 @@ class GameAdapter(
                 System.currentTimeMillis()
             )
             .apply()
+
+        // Pocket Native: motor recompilado en proceso propio, sin pasar por
+        // el núcleo Citra de EmulationActivity
+        if (holder.game.engine == Game.ENGINE_POCKETNATIVE) {
+            view.context.startActivity(
+                Intent(view.context, PocketNativeActivity::class.java).apply {
+                    putExtra(PocketNativeActivity.EXTRA_GAME, holder.game.path)
+                }
+            )
+            return
+        }
 
         val action = HomeNavigationDirections.actionGlobalEmulationActivity(holder.game)
         view.findNavController().navigate(action)
@@ -216,6 +228,12 @@ class GameAdapter(
             } else {
                 game.title
             }
+
+            // insignia del motor: Pocket Native (recompilado) frente al núcleo
+            // Citra de Azahar
+            binding.textEngine.visibility =
+                if (game.engine == Game.ENGINE_POCKETNATIVE) View.VISIBLE else View.GONE
+
             binding.textCompany.text = game.company
             binding.textGameRegion.text = translateRegions(game.regions)
             binding.imageCartridge.visibility =
@@ -532,6 +550,15 @@ class GameAdapter(
         GameIconUtils.loadGameIcon(activity, game, bottomSheetView.findViewById(R.id.game_icon))
 
         bottomSheetView.findViewById<MaterialButton>(R.id.about_game_play).setOnClickListener {
+            // Pocket Native: motor recompilado en proceso propio
+            if (game.engine == Game.ENGINE_POCKETNATIVE) {
+                view.context.startActivity(
+                    Intent(view.context, PocketNativeActivity::class.java).apply {
+                        putExtra(PocketNativeActivity.EXTRA_GAME, game.path)
+                    }
+                )
+                return@setOnClickListener
+            }
             val action = HomeNavigationDirections.actionGlobalEmulationActivity(holder.game)
             view.findNavController().navigate(action)
         }

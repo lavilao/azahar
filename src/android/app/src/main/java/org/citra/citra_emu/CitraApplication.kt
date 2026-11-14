@@ -53,6 +53,15 @@ class CitraApplication : Application() {
         application = this
         documentsTree = DocumentsTree()
 
+        // Proceso del motor Pocket Native: inicialización mínima. El motor
+        // reserva 1 GiB de fastmem nada más arrancar y cualquier librería
+        // cargada antes (libazahar) fragmentaría el espacio de direcciones de
+        // 32 bits; CrashDiagnostics además instalaría manejadores de señal
+        // que chocarían con los del propio motor.
+        if (Application.getProcessName().endsWith(":pocketnative")) {
+            return
+        }
+
         // diagnosticos de cierres inesperados (java y nativos) antes de
         // tocar cualquier cosa del nucleo
         CrashDiagnostics.install(this)

@@ -16,6 +16,7 @@ import kotlinx.serialization.Serializable
 import org.citra.citra_emu.CitraApplication
 import org.citra.citra_emu.NativeLibrary
 import org.citra.citra_emu.activities.EmulationActivity
+import org.citra.citra_emu.activities.PocketNativeActivity
 import org.citra.citra_emu.utils.BuildUtil
 
 @Parcelize
@@ -36,12 +37,26 @@ class Game(
     val icon: IntArray? = null,
     val fileType: String = "",
     val isCompressed: Boolean = false,
-    val filename: String
+    val filename: String,
+    // "citra" = núcleo de Azahar; "pocketnative" = motor Pocket Native
+    // (recompilación estática de zakuro) en proceso propio
+    val engine: String = ENGINE_CITRA
 ) : Parcelable {
     val keyAddedToLibraryTime get() = "${filename}_AddedToLibraryTime"
     val keyLastPlayedTime get() = "${filename}_LastPlayed"
 
     val launchIntent: Intent
+        get() = if (engine == ENGINE_POCKETNATIVE) {
+            // paquete Pocket Native: carpeta con game.3ds + title.so, el motor
+            // la recibe por el extra "game"
+            Intent(CitraApplication.appContext, PocketNativeActivity::class.java).apply {
+                putExtra(PocketNativeActivity.EXTRA_GAME, path)
+            }
+        } else {
+            citraLaunchIntent
+        }
+
+    private val citraLaunchIntent: Intent
         get() {
             var appUri: Uri
             if (isInstalled) {
@@ -96,6 +111,9 @@ class Game(
     }
 
     companion object {
+        const val ENGINE_CITRA = "citra"
+        const val ENGINE_POCKETNATIVE = "pocketnative"
+
         val extensions: Set<String> = HashSet(
             listOf("3dsx", "app", "axf", "cci", "cxi", "elf", "z3dsx", "zcci", "zcxi", "3ds")
         )

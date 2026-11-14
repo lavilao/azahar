@@ -23,9 +23,14 @@ import androidx.fragment.app.activityViewModels
 import androidx.navigation.findNavController
 import androidx.navigation.fragment.findNavController
 import androidx.preference.PreferenceManager
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.transition.MaterialSharedAxis
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.citra.citra_emu.CitraApplication
 import org.citra.citra_emu.HomeNavigationDirections
 import org.citra.citra_emu.R
@@ -43,7 +48,9 @@ import org.citra.citra_emu.utils.GameHelper
 import org.citra.citra_emu.utils.GpuDriverHelper
 import org.citra.citra_emu.utils.Log
 import org.citra.citra_emu.utils.PermissionsHandler
+import org.citra.citra_emu.utils.PocketNativeHelper
 import org.citra.citra_emu.viewmodel.DriverViewModel
+import org.citra.citra_emu.viewmodel.GamesViewModel
 import org.citra.citra_emu.viewmodel.HomeViewModel
 
 class HomeSettingsFragment : Fragment() {
@@ -183,6 +190,12 @@ class HomeSettingsFragment : Fragment() {
                 details = homeViewModel.gamesDir
             ),
             HomeSetting(
+                R.string.pocket_native_import,
+                R.string.pocket_native_import_description,
+                R.drawable.ic_add,
+                { importPnGames.launch(null) }
+            ),
+            HomeSetting(
                 R.string.preferences_theme,
                 R.string.theme_and_color_description,
                 R.drawable.ic_palette,
@@ -251,6 +264,25 @@ class HomeSettingsFragment : Fragment() {
             ).show()
 
             homeViewModel.setGamesDir(requireActivity(), result.path!!)
+        }
+
+    private val importPnGames =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri == null) {
+                return@registerForActivityResult
+            }
+            val activity = requireActivity()
+            lifecycleScope.launch(Dispatchers.IO) {
+                val imported = PocketNativeHelper.importFromTree(activity, uri)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        activity,
+                        activity.getString(R.string.pocket_native_import_done, imported),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    ViewModelProvider(activity)[GamesViewModel::class.java].reloadGames(true)
+                }
+            }
         }
 
     private fun shareLog() {

@@ -81,6 +81,21 @@
 
         </activity>
 
+        <!-- Motor Pocket Native (recompilación estática de zakuro): corre en
+             su propio proceso para que su reserva de fastmem de 1 GiB
+             encuentre un espacio de direcciones limpio en 32 bits. La UI es
+             la de Azahar; esta actividad solo aloja libpocketnative.so. -->
+        <activity
+            android:name="org.citra.citra_emu.activities.PocketNativeActivity"
+            android:exported="false"
+            android:label="@string/pocket_native"
+            android:process=":pocketnative"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|keyboard|keyboardHidden|navigation"
+            android:theme="@style/Theme.Citra.Main">
+            <meta-data android:name="android.app.lib_name" android:value="pocketnative" />
+        </activity>
+
         <activity
             android:name="org.citra.citra_emu.features.cheats.ui.CheatsActivity"
             android:exported="false"

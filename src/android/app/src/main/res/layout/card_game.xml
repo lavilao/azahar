@@ -62,6 +62,20 @@
                 tools:text="The Legend of Zelda\nOcarina of Time 3D" />
 
             <TextView
+                android:id="@+id/text_engine"
+                style="@style/TextAppearance.Material3.LabelSmall"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAlignment="viewStart"
+                android:singleLine="true"
+                android:ellipsize="none"
+                android:requiresFadingEdge="horizontal"
+                android:text="@string/pocket_native"
+                android:textColor="?attr/colorPrimary"
+                android:visibility="gone"
+                tools:visibility="gone" />
+
+            <TextView
                 android:id="@+id/text_company"
                 style="@style/TextAppearance.Material3.BodySmall"
                 android:layout_width="match_parent"

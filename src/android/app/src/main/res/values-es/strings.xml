@@ -1073,4 +1073,10 @@ Se esperan fallos gráficos temporales cuando ésta esté activado.</string>
     <string name="update_check_channel_stable">Estable</string>
     <string name="update_check_channel_prerelease">Prelanzamiento</string>
 
+    <!-- Motor Pocket Native -->
+    <string name="pocket_native">Pocket Native</string>
+    <string name="pocket_native_import">Importar juegos Pocket Native</string>
+    <string name="pocket_native_import_description">Añade los juegos construidos con el kit de Pocket Native (carpetas con game.3ds); corren recompilados estáticamente en un motor aparte</string>
+    <string name="pocket_native_import_done">Juegos importados: %1$d</string>
+
 </resources>

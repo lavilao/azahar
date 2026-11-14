@@ -1122,4 +1122,10 @@
     <string name="update_check_channel_stable">Stable</string>
     <string name="update_check_channel_prerelease">Prerelease</string>
 
+    <!-- Pocket Native engine -->
+    <string name="pocket_native">Pocket Native</string>
+    <string name="pocket_native_import">Import Pocket Native games</string>
+    <string name="pocket_native_import_description">Adds games built with the Pocket Native kit (folders with game.3ds); they run statically recompiled on a separate engine</string>
+    <string name="pocket_native_import_done">Imported games: %1$d</string>
+
 </resources>

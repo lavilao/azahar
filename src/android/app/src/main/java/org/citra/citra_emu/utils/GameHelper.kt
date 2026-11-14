@@ -38,6 +38,10 @@ object GameHelper {
             )
         }
 
+        // juegos Pocket Native (recompilados estáticamente, motor en proceso
+        // propio): paquetes importados en pn-games/
+        PocketNativeHelper.installedGames(context).forEach { games.add(it) }
+
         // Cache list of games found on disk
         val serializedGames = mutableSetOf<String>()
         games.forEach {

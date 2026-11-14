@@ -1,7 +1,7 @@
 # =============================================================================
 #  Azahar UI + motor Pocket Native — APK armeabi-v7a (32 bits) para Redmi 9A
 #
-#  Arquitectura del implante:
+#  Arquitectura del implante (APK "pocket", SIN núcleo Citra en C++):
 #    - La interfaz es la de Azahar (lista de juegos, ajustes, atajos...).
 #    - Los juegos Pocket Native (paquetes recompilados con el kit del PC,
 #      scripts/build.sh --32bit) se importan desde Ajustes y aparecen en la
@@ -10,6 +10,9 @@
 #      que aloja libpocketnative.so (zakuro): el motor reserva 1 GiB de
 #      fastmem en un espacio de direcciones limpio — en 32 bits eso es lo que
 #      evita los SIGBUS del enfoque en-proceso anterior.
+#    - Se compila con -PpocketOnly=true: sin CMake, sin NDK-build del núcleo,
+#      sin capas de validación de Vulkan. El APK solo lleva la UI (dex) y
+#      libpocketnative.so; la biblioteca muestra únicamente juegos PN.
 #
 #  Este workflow fusiona:
 #    - ci-32bit.yml de lavilao/pocket-native: compila el motor Rust para
@@ -40,7 +43,7 @@ permissions:
 
 jobs:
   build:
-    name: APK Azahar UI + motor PN (armeabi-v7a)
+    name: APK Azahar UI + motor PN (armeabi-v7a, sin núcleo Citra)
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -129,7 +132,7 @@ jobs:
           restore-keys: |
             android-pn-armv7-ndk27.3-
 
-      - name: Compilar APK (vanilla release)
+      - name: Compilar APK (vanilla release, sin núcleo Citra)
         working-directory: src/android
         env:
           ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
@@ -146,7 +149,9 @@ jobs:
           else
             echo "Sin secrets de firma: el APK se firmará con la clave debug del runner (firma no estable: define ANDROID_KEYSTORE_B64/ANDROID_KEYSTORE_PASS/ANDROID_KEY_ALIAS para firma estable)."
           fi
-          ./gradlew assembleVanillaRelease --stacktrace
+          # -PpocketOnly=true: sin CMake/NDK-build del núcleo Citra — el APK
+          # pocket lleva solo la UI de Azahar y libpocketnative.so.
+          ./gradlew assembleVanillaRelease -PpocketOnly=true --stacktrace
           echo "::group::Estadísticas de ccache"
           ccache -s || true
           echo "::endgroup::"

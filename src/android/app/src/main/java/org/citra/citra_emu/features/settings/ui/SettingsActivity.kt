@@ -36,6 +36,7 @@ import org.citra.citra_emu.features.settings.model.StringSetting
 import org.citra.citra_emu.features.settings.utils.SettingsFile
 import org.citra.citra_emu.utils.DirectoryInitialization
 import org.citra.citra_emu.utils.InsetsHelper
+import org.citra.citra_emu.utils.Log
 import org.citra.citra_emu.utils.RefreshRateUtil
 import org.citra.citra_emu.utils.SystemSaveGame
 import org.citra.citra_emu.utils.ThemeUtil
@@ -225,23 +226,29 @@ class SettingsActivity :
             throw IOException("Failed to delete $settingsFile")
         }
 
-        // Set the root of the document tree before we create a new config file or the native code
-        // will fail when creating the file.
-        if (DirectoryInitialization.setCitraUserDirectory()) {
-            CitraApplication.documentsTree.setRoot(Uri.parse(DirectoryInitialization.userPath))
-            NativeLibrary.createConfigFile()
-        } else {
-            throw IllegalStateException("Azahar directory unavailable when accessing config file!")
-        }
+        if (NativeLibrary.isCoreAvailable) {
+            // Set the root of the document tree before we create a new config file or the native code
+            // will fail when creating the file.
+            if (DirectoryInitialization.setCitraUserDirectory()) {
+                CitraApplication.documentsTree.setRoot(Uri.parse(DirectoryInitialization.userPath))
+                NativeLibrary.createConfigFile()
+            } else {
+                throw IllegalStateException("Azahar directory unavailable when accessing config file!")
+            }
 
-        // Set default values for system config file
-        SystemSaveGame.apply {
-            setUsername("AZAHAR")
-            setBirthday(11, 7)
-            setSystemLanguage(1)
-            setSoundOutputMode(1)
-            setCountryCode(49)
-            setPlayCoins(42)
+            // Set default values for system config file
+            SystemSaveGame.apply {
+                setUsername("AZAHAR")
+                setBirthday(11, 7)
+                setSystemLanguage(1)
+                setSoundOutputMode(1)
+                setCountryCode(49)
+                setPlayCoins(42)
+            }
+        } else {
+            // APK pocket sin núcleo Citra: sin config nativa ni sysdata que
+            // recrear (SystemSaveGame es todo JNI); el reset borra solo la INI.
+            Log.warning("[SettingsActivity] reset sin núcleo Citra: config nativa no recreada")
         }
 
         showToastMessage(getString(R.string.settings_reset), true)

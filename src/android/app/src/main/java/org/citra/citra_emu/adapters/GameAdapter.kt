@@ -42,6 +42,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -167,6 +168,11 @@ class GameAdapter(
 
     // Triggers a library refresh if the user clicks on stale data
     private fun gameExists(holder: GameViewHolder): Boolean {
+        if (holder.game.engine == Game.ENGINE_POCKETNATIVE) {
+            // Paquete importado a pn-games/ (almacenamiento propio de la app):
+            // basta comprobar que game.3ds siga ahí, sin librería nativa.
+            return File(holder.game.path, "game.3ds").isFile
+        }
         if (holder.game.isInstalled) {
             return true
         }
@@ -564,24 +570,30 @@ class GameAdapter(
         }
 
         bottomSheetView.findViewById<TextView>(R.id.about_game_playtime).text =
-            buildString {
-                val playTimeSeconds = NativeLibrary.playTimeManagerGetPlayTime(game.titleId)
+            if (game.engine == Game.ENGINE_POCKETNATIVE) {
+                // El gestor de tiempo de juego vive en la librería nativa del
+                // núcleo; los paquetes PN guardan sus datos en su carpeta.
+                context.getString(R.string.pocket_native)
+            } else {
+                buildString {
+                    val playTimeSeconds = NativeLibrary.playTimeManagerGetPlayTime(game.titleId)
 
-                val hours = playTimeSeconds / 3600
-                val minutes = (playTimeSeconds % 3600) / 60
-                val seconds = playTimeSeconds % 60
+                    val hours = playTimeSeconds / 3600
+                    val minutes = (playTimeSeconds % 3600) / 60
+                    val seconds = playTimeSeconds % 60
 
-                val readablePlayTime = when {
-                    hours > 0 -> "${hours}h ${minutes}m ${seconds}s"
-                    minutes > 0 -> "${minutes}m ${seconds}s"
-                    else -> "${seconds}s"
+                    val readablePlayTime = when {
+                        hours > 0 -> "${hours}h ${minutes}m ${seconds}s"
+                        minutes > 0 -> "${minutes}m ${seconds}s"
+                        else -> "${seconds}s"
+                    }
+
+                    append(
+                        context.getString(R.string.game_context_playtime) +
+                            " " +
+                            readablePlayTime
+                    )
                 }
-
-                append(
-                    context.getString(R.string.game_context_playtime) +
-                        " " +
-                        readablePlayTime
-                )
             }
 
         bottomSheetView.findViewById<MaterialButton>(R.id.game_shortcut).setOnClickListener {
@@ -655,7 +667,11 @@ class GameAdapter(
             bottomSheetDialog.dismiss()
         }
 
-        bottomSheetView.findViewById<MaterialButton>(R.id.cheats).setOnClickListener {
+        bottomSheetView.findViewById<MaterialButton>(R.id.cheats).apply {
+            // Los trucos se leen y escriben con el núcleo Citra; los paquetes
+            // Pocket Native corren en su propio motor y no los usan.
+            visibility = if (game.engine == Game.ENGINE_POCKETNATIVE) View.GONE else View.VISIBLE
+        }.setOnClickListener {
             val action = CheatsFragmentDirections.actionGlobalCheatsFragment(holder.game.titleId)
             view.findNavController().navigate(action)
             bottomSheetDialog.dismiss()
@@ -664,7 +680,11 @@ class GameAdapter(
         val compressDecompressButton = bottomSheetView.findViewById<MaterialButton>(
             R.id.compress_decompress
         )
-        if (game.isInstalled) {
+        if (game.engine == Game.ENGINE_POCKETNATIVE) {
+            // Comprimir/descomprimir ROMs es cosa del núcleo Citra; los
+            // paquetes PN ya llevan su title.so y su game.3ds.
+            compressDecompressButton.visibility = View.GONE
+        } else if (game.isInstalled) {
             compressDecompressButton.setOnClickListener {
                 Toast.makeText(
                     context,
@@ -692,17 +712,26 @@ class GameAdapter(
         compressDecompressButton.text =
             context.getString(if (!game.isCompressed) R.string.compress else R.string.decompress)
 
-        bottomSheetView.findViewById<MaterialButton>(R.id.menu_button_open).setOnClickListener {
+        bottomSheetView.findViewById<MaterialButton>(R.id.menu_button_open).apply {
+            // Los directorios de datos (save/updates/DLC) son del núcleo Citra;
+            // en el APK pocket el árbol de documentos ni siquiera tiene raíz.
+            visibility = if (game.engine == Game.ENGINE_POCKETNATIVE) View.GONE else View.VISIBLE
+        }.setOnClickListener {
             showOpenContextMenu(it, game)
         }
 
         bottomSheetView.findViewById<MaterialButton>(
             R.id.menu_button_uninstall
-        ).setOnClickListener {
+        ).apply {
+            visibility = if (game.engine == Game.ENGINE_POCKETNATIVE) View.GONE else View.VISIBLE
+        }.setOnClickListener {
             showUninstallContextMenu(it, game, bottomSheetDialog)
         }
 
-        bottomSheetView.findViewById<MaterialButton>(R.id.delete_cache).setOnClickListener {
+        bottomSheetView.findViewById<MaterialButton>(R.id.delete_cache).apply {
+            // borrar cachés de shaders es borrar archivos del núcleo Citra
+            visibility = if (game.engine == Game.ENGINE_POCKETNATIVE) View.GONE else View.VISIBLE
+        }.setOnClickListener {
             val options =
                 arrayOf(context.getString(R.string.vulkan), context.getString(R.string.opengles))
             var selectedIndex = -1

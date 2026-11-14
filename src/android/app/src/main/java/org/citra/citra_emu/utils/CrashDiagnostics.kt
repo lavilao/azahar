@@ -31,7 +31,9 @@ object CrashDiagnostics {
             val dir = reportDir(context)
             dir.mkdirs()
             NativeLibrary.setCrashReportDir(File(dir, CRASH_FILE).absolutePath)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Throwable y no Exception: en el APK pocket el núcleo no existe y
+            // setCrashReportDir lanza UnsatisfiedLinkError (un Error, no una Exception)
             Log.error("$TAG: no se pudo preparar el directorio de informes: ${e.message}")
         }
 

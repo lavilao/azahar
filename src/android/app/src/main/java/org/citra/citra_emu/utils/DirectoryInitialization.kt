@@ -13,6 +13,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import org.citra.citra_emu.CitraApplication
+import org.citra.citra_emu.BuildConfig
 import org.citra.citra_emu.NativeLibrary
 import org.citra.citra_emu.utils.PermissionsHandler.hasWriteAccess
 
@@ -39,7 +40,12 @@ object DirectoryInitialization {
         }
 
         if (directoryState != DirectoryInitializationState.CITRA_DIRECTORIES_INITIALIZED) {
-            directoryState = if (hasWriteAccess(context)) {
+            directoryState = if (BuildConfig.POCKET_ONLY) {
+                // APK pocket sin núcleo Citra: no hay config nativa ni log de
+                // archivo que crear (createLogFile/createConfigFile son JNI);
+                // el motor PN usa filesDir/pn-games y filesDir/titles.
+                DirectoryInitializationState.CITRA_DIRECTORIES_INITIALIZED
+            } else if (hasWriteAccess(context)) {
                 if (setCitraUserDirectory()) {
                     CitraApplication.documentsTree.setRoot(Uri.parse(userPath))
                     NativeLibrary.createLogFile()

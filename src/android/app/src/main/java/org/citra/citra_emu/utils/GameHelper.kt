@@ -9,6 +9,7 @@ import android.net.Uri
 import androidx.preference.PreferenceManager
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.citra.citra_emu.BuildConfig
 import org.citra.citra_emu.CitraApplication
 import org.citra.citra_emu.NativeLibrary
 import org.citra.citra_emu.R
@@ -28,19 +29,28 @@ object GameHelper {
         val games = mutableListOf<Game>()
         val context = CitraApplication.appContext
         preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val gamesDir = preferences.getString(KEY_GAME_PATH, "")
-        val gamesUri = Uri.parse(gamesDir)
 
-        addGamesRecursive(games, FileUtil.listFiles(gamesUri), 3)
-        NativeLibrary.getInstalledGamePaths().forEach {
-            games.add(
-                getGame(Uri.parse(it.path), isInstalled = true, addedToLibrary = true, it.mediaType)
-            )
+        if (BuildConfig.POCKET_ONLY) {
+            // APK pocket (sin núcleo Citra en C++): los ROM crudos no son
+            // jugables (sin JIT de 32 bits) y sus metadatos se leen con la
+            // librería nativa, así que la biblioteca muestra únicamente los
+            // paquetes Pocket Native importados a pn-games/.
+            games.addAll(PocketNativeHelper.installedGames(context))
+        } else {
+            val gamesDir = preferences.getString(KEY_GAME_PATH, "")
+            val gamesUri = Uri.parse(gamesDir)
+
+            addGamesRecursive(games, FileUtil.listFiles(gamesUri), 3)
+            NativeLibrary.getInstalledGamePaths().forEach {
+                games.add(
+                    getGame(Uri.parse(it.path), isInstalled = true, addedToLibrary = true, it.mediaType)
+                )
+            }
+
+            // juegos Pocket Native (recompilados estáticamente, motor en proceso
+            // propio): paquetes importados en pn-games/
+            PocketNativeHelper.installedGames(context).forEach { games.add(it) }
         }
-
-        // juegos Pocket Native (recompilados estáticamente, motor en proceso
-        // propio): paquetes importados en pn-games/
-        PocketNativeHelper.installedGames(context).forEach { games.add(it) }
 
         // Cache list of games found on disk
         val serializedGames = mutableSetOf<String>()

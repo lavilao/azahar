@@ -1,4 +1,4 @@
-# Azahar + Pocket Native (implante del motor)
+# Azahar + Pocket Native (implante del motor, APK sin núcleo Citra)
 
 Este fork mantiene **la UI de Azahar** como interfaz y añade el **motor de
 Pocket Native** (zakuro con recompilación estática AOT) para jugar en
@@ -14,19 +14,31 @@ intérprete es demasiado lento.
 │                             │      │                                │
 │  lista de juegos, ajustes,  │ Intent extra "game"                 │
 │  atajos, insignia por juego ├─────▶│  PocketNativeActivity          │
-│                             │      │   └─ libpocketnative.so        │
-│  libazahar.so (núcleo       │      │      (zakuro: GLES 3.1,        │
-│  Citra, solo 64 bits)       │      │       fastmem 1 GiB, recomp)   │
+│  (dex Java/Kotlin, ~5 MB)   │      │   └─ libpocketnative.so        │
+│                             │      │      (zakuro: GLES 3.1,        │
+│  SIN libcitra-android.so    │      │       fastmem 1 GiB, recomp)   │
 └─────────────────────────────┘      └────────────────────────────────┘
 ```
 
+- **El APK pocket no lleva el núcleo Citra en C++** (se compila con
+  `-PpocketOnly=true`, ver abajo). El núcleo solo aporta la emulación
+  clásica — intérprete, JIT de 64 bits, GPU PICA, servicios HLE — y eso es
+  exactamente lo que Pocket Native reemplaza: el `title.so` recompilado ya
+  ES el juego en código ARM nativo, y el runtime de zakuro le da los
+  servicios del sistema, el audio y el render GLES 3.1. Sin core, el APK
+  pierde ~27 MB de libcitra-android.so, 16 MB de capas de validación de
+  Vulkan y horas de compilación CMake en la CI.
 - Los juegos **Pocket Native** (paquetes recompilados en el PC con el kit)
   aparecen en la lista con la insignia "Pocket Native" y arrancan el motor en
   un **proceso propio**. Ahí está la clave del 32 bits: el motor reserva
   1 GiB de fastmem (`zakuro_core::reserve_early`) en un espacio de direcciones
-  limpio; sin proceso propio, libazahar fragmenta ese espacio y el resultado
-  son los SIGBUS (señal 7) del enfoque anterior en-proceso.
-- Los ROM crudos siguen abriéndose con el núcleo Citra como siempre.
+  limpio; sin proceso propio, cualquier otra librería fragmentaría ese
+  espacio y el resultado son los SIGBUS (señal 7) del enfoque en-proceso
+  anterior.
+- Sin núcleo, la biblioteca muestra únicamente paquetes PN: los ROM crudos
+  (`.3ds`/`.cia`) no son jugables en el APK pocket y por eso no se listan.
+  En un teléfono de 64 bits se puede compilar el APK completo (sin
+  `-PpocketOnly`) para tener además la emulación clásica de siempre.
 - No hay selección de motor a mano: **cada juego corre su motor por diseño**
   (los PN con recompilación estática; sin JIT ni intérprete a elegir), y la
   insignia indica cuál usa cada entrada de la lista.
@@ -83,15 +95,24 @@ Workflow `.github/workflows/azahar-pn.yml`: compila
 `libpocketnative.so` (armv7) desde `lavilao/pocket-native` (ref ajustable),
 la deja en `jniLibs/armeabi-v7a/`, empaqueta los perfiles por título
 (`titles/*/profile.toml`, incluidos los arreglos de shaders PowerVR de tu
-Redmi 9A) como assets y compila el APK vanilla release. Se dispara con push a
-`master`/`pn-implant`, con tag `v*` (publica en Releases) o a mano desde la
-pestaña Actions (con opción de elegir la ref del motor).
+Redmi 9A) como assets y compila el APK con `assembleVanillaRelease
+-PpocketOnly=true` — **sin CMake, sin NDK-build del núcleo, sin capas de
+validación**: minutos en vez de horas, y un APK de solo unos MB.
+Se dispara con push a `master`/`pn-implant`, con tag `v*` (publica en
+Releases) o a mano desde la pestaña Actions (con opción de elegir la ref del
+motor).
+
+Para un APK **completo** (UI + núcleo Citra + motor PN, útil en teléfonos de
+64 bits) compila sin la propiedad: `./gradlew assembleVanillaRelease`.
 
 ## Estado y limitaciones
 
 - Solo `armeabi-v7a` por ahora (la `abiFilter` del repo ya está fijada a
   v7a para la MIUI 32 bits del Redmi 9A). Para arm64 habría que añadir la
   lib del motor compilada a `aarch64-linux-android`.
+- El APK pocket no puede: ejecutar ROM crudos, instalar firmware o CIAs,
+  gestionar drivers de GPU ni comprimir ROMs — todo eso vive en el núcleo
+  Citra, y los ajustes de esas secciones se ocultan en el APK pocket.
 - El audio, el render GLES 3.1 y la lógica de guardado son del motor
   pocket-native (probado por el autor en un Redmi 9 con Fantasy Life);
   los ajustes de la UI de Azahar no afectan a los juegos PN — usa el menú

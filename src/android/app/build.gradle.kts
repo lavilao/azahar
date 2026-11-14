@@ -26,6 +26,15 @@ val autoVersion = (((System.currentTimeMillis() / 1000) - 1451606400) / 10).toIn
 // listOf("arm64-v8a", "x86_64").
 val abiFilter = listOf("armeabi-v7a")
 
+// APK "pocket" (gradle -PpocketOnly=true): la UI de Azahar + el motor Pocket
+// Native (libpocketnative.so), SIN el núcleo Citra en C++. El núcleo solo
+// aporta la emulación clásica (intérprete/JIT), que en 32 bits no existe
+// (dynarmic es solo de 64 bits) y que los paquetes Pocket Native no usan:
+// el title.so recompilado ya ES el juego en código ARM nativo. Sin core, el
+// APK pierde ~27 MB de libcitra-android.so, las capas de validación de
+// Vulkan (16 MB) y horas de compilación CMake en la CI.
+val pocketOnly = ((findProperty("pocketOnly") as String?) ?: "false") == "true"
+
 val downloadedJniLibsPath = "${layout.buildDirectory.get().asFile.path}/downloadedJniLibs"
 
 android {
@@ -124,6 +133,9 @@ android {
         // ^ Has no suffix, unlike VERSION_NAME
         buildConfigField("String", "GIT_HASH", "\"${getGitHash()}\"")
         buildConfigField("String", "BRANCH", "\"${getBranch()}\"")
+        // Visible en Kotlin como BuildConfig.POCKET_ONLY: la UI oculta lo que
+        // depende del núcleo Citra (ROM crudos, firmware, CIAs, drivers GPU...)
+        buildConfigField("boolean", "POCKET_ONLY", "$pocketOnly")
     }
 
     val keystoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
@@ -217,10 +229,13 @@ android {
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            version = "3.25.0+"
-            path = file("../../../CMakeLists.txt")
+    // El núcleo Citra en C++ solo se compila para el APK completo.
+    if (!pocketOnly) {
+        externalNativeBuild {
+            cmake {
+                version = "3.25.0+"
+                path = file("../../../CMakeLists.txt")
+            }
         }
     }
 
@@ -254,29 +269,34 @@ dependencies {
 }
 
 // Download Vulkan Validation Layers from the KhronosGroup GitHub.
-val downloadVulkanValidationLayers = tasks.register<Download>("downloadVulkanValidationLayers") {
-    src(
-        "https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases/download/vulkan-sdk-1.4.313.0/android-binaries-1.4.313.0.zip"
-    )
-    dest(file("${layout.buildDirectory.get().asFile.path}/tmp/Vulkan-ValidationLayers.zip"))
-    onlyIfModified(true)
-}
-
-// Extract Vulkan Validation Layers into the downloaded native libraries directory.
-val unzipVulkanValidationLayers = tasks.register<Copy>("unzipVulkanValidationLayers") {
-    dependsOn(downloadVulkanValidationLayers)
-    from(zipTree(downloadVulkanValidationLayers.get().dest)) {
-        // Exclude the top level directory in the zip as it violates the expected jniLibs directory structure.
-        eachFile {
-            relativePath = RelativePath(true, *relativePath.segments.drop(1).toTypedArray())
-        }
-        includeEmptyDirs = false
+// (Solo en el APK completo; el motor Pocket Native usa GLES 3.1 y el núcleo
+// del APK pocket no existe, así que las capas de validación son 16 MB al
+// vacío ahí.)
+if (!pocketOnly) {
+    val downloadVulkanValidationLayers = tasks.register<Download>("downloadVulkanValidationLayers") {
+        src(
+            "https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases/download/vulkan-sdk-1.4.313.0/android-binaries-1.4.313.0.zip"
+        )
+        dest(file("${layout.buildDirectory.get().asFile.path}/tmp/Vulkan-ValidationLayers.zip"))
+        onlyIfModified(true)
     }
-    into(downloadedJniLibsPath)
-}
 
-tasks.named("preBuild") {
-    dependsOn(unzipVulkanValidationLayers)
+    // Extract Vulkan Validation Layers into the downloaded native libraries directory.
+    val unzipVulkanValidationLayers = tasks.register<Copy>("unzipVulkanValidationLayers") {
+        dependsOn(downloadVulkanValidationLayers)
+        from(zipTree(downloadVulkanValidationLayers.get().dest)) {
+            // Exclude the top level directory in the zip as it violates the expected jniLibs directory structure.
+            eachFile {
+                relativePath = RelativePath(true, *relativePath.segments.drop(1).toTypedArray())
+            }
+            includeEmptyDirs = false
+        }
+        into(downloadedJniLibsPath)
+    }
+
+    tasks.named("preBuild") {
+        dependsOn(unzipVulkanValidationLayers)
+    }
 }
 
 ktlint {

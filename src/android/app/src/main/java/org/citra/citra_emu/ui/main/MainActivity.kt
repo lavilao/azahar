@@ -239,6 +239,13 @@ class MainActivity :
             return
         }
 
+        if (BuildConfig.POCKET_ONLY) {
+            // APK pocket sin núcleo Citra: sin directorio de usuario, sin
+            // permisos de almacenamiento ni diálogos de migración — el motor
+            // Pocket Native solo usa las carpetas propias de la app.
+            return
+        }
+
         if (!BuildUtil.isGooglePlayBuild) {
             fun requestMissingFilesystemPermission() =
                 GrantMissingFilesystemPermissionFragment.newInstance()
@@ -300,7 +307,9 @@ class MainActivity :
         val firstTimeSetup = PreferenceManager.getDefaultSharedPreferences(applicationContext)
             .getBoolean(Settings.PREF_FIRST_APP_LAUNCH, true)
 
-        if (firstTimeSetup && !homeViewModel.navigatedToSetup) {
+        if (firstTimeSetup && !homeViewModel.navigatedToSetup && !BuildConfig.POCKET_ONLY) {
+            // En el APK pocket no hay asistente de primera instalación: todo lo
+            // que configura (ROMs, firmware, directorios) depende del núcleo.
             homeViewModel.setupCurrentPage = savedInstanceState?.getInt(KEY_SETUP_CURRENT_PAGE) ?: 0
             navController.navigate(R.id.firstTimeSetupFragment)
             homeViewModel.navigatedToSetup = true

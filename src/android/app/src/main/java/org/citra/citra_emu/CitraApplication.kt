@@ -66,7 +66,10 @@ class CitraApplication : Application() {
         // tocar cualquier cosa del nucleo
         CrashDiagnostics.install(this)
 
-        if (PermissionsHandler.hasWriteAccess(applicationContext)) {
+        // En el APK pocket no hay núcleo Citra: sin directorio de usuario ni
+        // archivo de configuración nativo (el motor PN usa filesDir/pn-games
+        // y filesDir/titles, y libpocketnative.so no registra estos JNI).
+        if (PermissionsHandler.hasWriteAccess(applicationContext) && !BuildConfig.POCKET_ONLY) {
             DirectoryInitialization.start()
         }
 

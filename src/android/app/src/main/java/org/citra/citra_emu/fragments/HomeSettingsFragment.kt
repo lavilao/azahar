@@ -31,6 +31,7 @@ import com.google.android.material.transition.MaterialSharedAxis
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.citra.citra_emu.BuildConfig
 import org.citra.citra_emu.CitraApplication
 import org.citra.citra_emu.HomeNavigationDirections
 import org.citra.citra_emu.R
@@ -65,6 +66,21 @@ class HomeSettingsFragment : Fragment() {
     private val preferences
         get() =
             PreferenceManager.getDefaultSharedPreferences(CitraApplication.appContext)
+
+    // Entradas de Ajustes que solo aplican al núcleo Citra (emulación
+    // clásica): en el APK pocket se ocultan porque dependen de la librería
+    // nativa o de flujos de ROM/firmware que ahí no existen.
+    private val coreOnlySettings = setOf(
+        R.string.grid_menu_core_settings,
+        R.string.artic_base_connect,
+        R.string.multiplayer,
+        R.string.install_game_content,
+        R.string.setup_system_files,
+        R.string.share_log,
+        R.string.gpu_driver_manager,
+        R.string.select_citra_user_folder,
+        R.string.select_games_folder
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -213,6 +229,14 @@ class HomeSettingsFragment : Fragment() {
             )
         )
 
+        // APK pocket (sin núcleo Citra): solo importar juegos PN, tema y
+        // acerca de; el resto de entradas llaman a la librería nativa.
+        val visibleOptions = if (BuildConfig.POCKET_ONLY) {
+            optionsList.filterNot { it.titleId in coreOnlySettings }
+        } else {
+            optionsList
+        }
+
         binding.homeSettingsList.apply {
             layoutManager = GridLayoutManager(
                 requireContext(),
@@ -221,7 +245,7 @@ class HomeSettingsFragment : Fragment() {
             adapter = HomeSettingAdapter(
                 requireActivity() as AppCompatActivity,
                 viewLifecycleOwner,
-                optionsList
+                visibleOptions
             )
         }
 

@@ -48,6 +48,16 @@ object NativeLibrary {
      */
     const val TOUCHSCREEN_DEVICE = "Touchscreen"
 
+    /**
+     * false si libcitra-android.so no está presente o no cargó: en el APK
+     * pocket (-PpocketOnly=true) no hay núcleo Citra en C++, así que ninguna
+     * función `external` de este objeto se puede llamar y Log.kt desvía el
+     * log a logcat de Android. Los juegos Pocket Native no lo necesitan:
+     * corren con libpocketnative.so en su proceso propio.
+     */
+    @JvmField
+    var isCoreAvailable = false
+
     @JvmField
     var sEmulationActivity = WeakReference<EmulationActivity?>(null)
     private var alertResult = false
@@ -56,8 +66,11 @@ object NativeLibrary {
     init {
         try {
             System.loadLibrary("citra-android")
+            isCoreAvailable = true
         } catch (ex: UnsatisfiedLinkError) {
-            Log.error("[NativeLibrary] $ex")
+            // android.util.Log directamente: Log.kt pregunta isCoreAvailable,
+            // y este objeto aún está inicializándose
+            android.util.Log.e("NativeLibrary", "nucleo Citra no disponible: $ex")
         }
     }
 

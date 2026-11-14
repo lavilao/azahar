@@ -100,12 +100,18 @@ class SettingsActivityPresenter(private val activityView: SettingsActivityView) 
             Log.debug("[SettingsActivity] Settings activity stopping. Saving settings to INI...")
             settings.saveSettings(activityView)
             // added to ensure that layout changes take effect as soon as settings window closes
-            NativeLibrary.reloadSettings()
-            NativeLibrary.updateFramebuffer(NativeLibrary.isPortraitMode())
+            if (NativeLibrary.isCoreAvailable) {
+                NativeLibrary.reloadSettings()
+                NativeLibrary.updateFramebuffer(NativeLibrary.isPortraitMode())
+                TurboHelper.reloadTurbo(false) // TODO: Can this go somewhere else? -OS
+            }
             updateAndroidImageVisibility()
-            TurboHelper.reloadTurbo(false) // TODO: Can this go somewhere else? -OS
         }
-        NativeLibrary.reloadSettings()
+        if (NativeLibrary.isCoreAvailable) {
+            // APK pocket (sin núcleo Citra): la INI se guarda igual (ini4j),
+            // pero reloadSettings es JNI y ahí no existe librería nativa.
+            NativeLibrary.reloadSettings()
+        }
     }
 
     fun onSettingChanged() {

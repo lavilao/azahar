@@ -33,8 +33,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - uses: android-actions/setup-android@v3
+
       - name: Android SDK (NDK 27.0.12077973, platform 35)
         run: |
+          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager --install "ndk;27.0.12077973" "platforms;android-35" "build-tools;35.0.0" >/dev/null
 
       - name: Tools (ninja)

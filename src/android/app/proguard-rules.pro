@@ -5,6 +5,12 @@
 # To get usable stack traces
 -dontobfuscate
 
+# El motor Pocket Native (libpocketnative.so) llama finishWith(int) desde Rust
+# con JNI call_method y el nombre exacto; sin esta regla R8 elimina el metodo
+# al no ver ninguna referencia desde Java/Kotlin (y Reset/salida no llegarian
+# nunca a la UI).
+-keep class org.citra.citra_emu.activities.PocketNativeActivity { *; }
+
 # Prevents crashing when using Wini
 -keep class org.ini4j.spi.IniParser
 -keep class org.ini4j.spi.IniBuilder
